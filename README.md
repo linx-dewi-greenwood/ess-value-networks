@@ -1,6 +1,6 @@
 # Basic human value networks in Europe, ESS Rounds 9 and 10
 
-Supplementary materials for the extended research project report *Continuity and Cross-National Differences in European Basic Human Value Networks in the Context of the COVID-19 Pandemic — A 20-Country Comparison of ESS Rounds 9 and 10* (DATA72000, MSc Data Science, Social Analytics pathway, student ID 14244386, 2026).
+Supplementary materials for the extended research project report *Continuity and Cross-National Differences in European Basic Human Value Networks in the Context of the COVID-19 Pandemic — A 20-Country Comparison of ESS Rounds 9 and 10* (DATA72000, MSc Data Science, Social Analytics pathway, 2026).
 
 This repository holds the direct source of every number reported in that report, together with everything needed to run the analysis again. The full technical appendix is **[`SAN-14244386-am.docx`](SAN-14244386-am.docx)** in this root folder; it maps each reported figure to the file it came from and lists MD5 checksums for all 105 files.
 
