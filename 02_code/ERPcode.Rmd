@@ -1,0 +1,2809 @@
+---
+title: "ERP analysis code: European basic human value networks before and during the COVID-19 pandemic"
+subtitle: "ESS Rounds 9 and 10, 20 countries. The full pipeline, from the raw extract to every number reported in the report"
+author: "Xiaoyue Lin, Todd K Hartman"
+date: "Last updated `r format(Sys.Date())`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+  pdf_document:
+    toc: true
+    toc_depth: 3
+---
+
+```{r knitr-setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE,
+                      comment = "", fig.width = 10, fig.height = 5)
+options(width = 200, stringsAsFactors = FALSE)
+```
+
+# How this file is organised
+
+This file merges what were originally two separate scripts into one. It runs from the raw ESS extract through to every number reported in the project report, so that a reviewer can trace any figure or table in the report back to the code that produced it.
+
+Part 1 is data preparation and the formal analysis. It reads the merged ESS Round 9 and Round 10 extract, builds the analysis sample for the 20 countries that took part in both rounds,
+compares item endorsement levels across rounds with survey-weighted regression, estimates the 40 MGM networks, runs the network comparison tests, the exploratory edge-level tests,
+the bootstrap accuracy audit and the exploratory community analysis, and writes every result to the caches and CSV files under `multicountry_results/`.
+
+Part 2 is the verification pass. It reads only the CSV files produced by Part 1, together with the raw data, recomputes and prints every number reported in the Results chapter, and draws the figures used in the report.
+It re-estimates no network and re-runs no permutation test or bootstrap. The two parts are kept separate on purpose, so that the reported numbers can be checked without repeating any expensive computation.
+
+The expensive steps are controlled by the `RUN_*` switches, all of which are `FALSE` by default. With the caches in place, knitting this file from top to bottom reproduces every reported result in a few minutes.
+To recompute from scratch, set the relevant switch to `TRUE`. Be aware that the 40 networks, the 20 network comparison tests, the bootstrap audit and bootEGA each take hours.
+
+## How to run it
+
+Set the working directory to the project root, then knit this file or run it chunk by chunk.
+The raw data file `ESS9e03_2-ESS10-subset.csv` must sit in that directory, and the four cached model objects in `multicountry_results/mgm_multicountry_v3/`.
+
+# Part 1. Data preparation and formal analysis
+
+## Provenance of the data
+Citation
+Please use the following reference (DOI) when citing data: 
+European Social Survey European Research Infrastructure (ESS ERIC). (2023). ESS10 integrated file, edition 3.2 [Data set]. Sikt - Norwegian Agency for Shared Services in Education and Research. https://doi.org/10.21338/ess10e03_2
+
+European Social Survey European Research Infrastructure (ESS ERIC). (2023). ESS10 Self-completion - integrated file, edition 3.1 [Data set]. Sikt - Norwegian Agency for Shared Services in Education and Research. https://doi.org/10.21338/ess10sce03_1
+
+Please use the following reference (DOI) when citing documentation: 
+European Social Survey European Research Infrastructure (ESS ERIC). (2022). ESS10 Data Documentation. Sikt - Norwegian Agency for Shared Services in Education and Research. https://doi.org/10.21338/NSD-ESS10-2020
+
+All persons aged 15 and over resident within private households, regardless of their nationality, citizenship, language or legal status, in the countries as listed in the "Geographical Unit"
+
+Time period
+18/09/2020 - 03/09/2022
+
+Geographical scope
+Europe
+
+Geographical unit
+Austria, Belgium, Bulgaria, Croatia, Cyprus, Czechia, Estonia, Finland, France, Germany, Greece, Hungary, Iceland, Ireland, Israel, Italy, Latvia, Lithuania, Montenegro, Netherlands, North Macedonia, Norway, Poland, Portugal, Serbia, Slovakia, Slovenia, Spain, Sweden, Switzerland, United Kingdom
+
+Data type
+Numeric
+
+The European Social Survey (ESS) is an academically driven cross-national survey, founded in 2001. It has been administered in 40 countries to date. Its three aims are, firstly – to monitor and interpret changing public attitudes and values within Europe and to investigate how they interact with Europe's changing institutions, secondly – to advance and consolidate improved methods of cross-national survey measurement in Europe and beyond, and thirdly – to develop a series of European social indicators, including attitudinal indicators. The survey involves strict random probability sampling, high response rate and rigorous translation protocols. 
+
+ESS data collection is based on an hour-long face-to-face interview. Due to the impact of the COVID-19 pandemic at Round 10, a total of 9 countries switched to a self-completion (web and paper) approach, while 22 countries used ESS’s usual face-to-face fieldwork approach. In addition, countries opting for the usual face-to-face approach, could use video interviews as a back-up for the in-person interviews. Caution is advised when making comparisons between countries using face-to-face and self-completion approaches at ESS Round 10, and when making time series comparisons in a country that has used a self-completion approach at Round 10.
+
+Another impact of the pandemic was that Round 10 fieldwork was carried out over a longer period than a usual ESS Round. The first country started fieldwork in September 2020 and the final countries finished fieldwork in August 2022. The pandemic may have resulted in some attitudinal and behavioural changes; therefore, the timing of fieldwork may be particularly important at this round. Users are encouraged to review the fieldwork dates for countries and consider this when carrying out analysis between Round 10 participating countries, or when comparing country level results at Round 10 with previous ESS rounds.
+
+The 21 Basic Human Values items are as follows: 
+
+
+"Now I will briefly describe some people. Please listen to each description and tell me how much each person is or is not like you. Use this card for your answer."
+
+
+Thinking up new ideas and being creative is important to him/her. S/he likes to do things in her own original way.
+
+It is important to him/her to be rich. S/he wants to have a lot of money and expensive things.
+
+S/he thinks it is important that every person in the world should be treated equally. S/he believes everyone should have equal opportunities in life.
+
+It's important to him/her to show his/her abilities. S/he wants people to admire what s/he does.
+
+It is important to him/her to live in secure surroundings. S/he avoids anything that might endanger his/her safety.
+
+S/he likes surprises and is always looking for new things to do. S/he thinks it is important to do lots of different things in life.
+
+S/he believes that people should do what they're told. S/he thinks people should follow rules at all times, even when no-one is watching.
+
+It is important to him/her to listen to people who are different from him/her. Even when
+s/he disagrees with them, s/he still wants to understand them.
+
+It is important to her to be humble and modest. She tries not to draw attention to herself.
+
+Having a good time is important to her. She likes to “spoil” herself.
+
+It is important to her to make her own decisions about what she does. She likes to be free and not depend on others.
+
+It's very important to her to help the people around her. She wants to care for their well-being.
+
+Being very successful is important to her.She hopes people will recognise her achievements.
+
+It is important to her that the government ensures her safety against all threats. She wants the state to be strong so it can defend its citizens.
+
+She looks for adventures and likes to take risks. She wants to have an exciting life.
+
+It is important to her always to behave properly. She wants to avoid doing anything people would say is wrong.
+
+It is important to her to get respect from others. She wants people to do what she says.
+
+It is important to her to be loyal to her friends. She wants to devote herself to people close to her.
+
+She strongly believes that people should care for nature. Looking after the environment is important to her.
+
+Tradition is important to her. She tries to follow the customs handed down by her religion or her family.
+
+She seeks every chance she can to have fun. It is important to her to do things that give her pleasure. 
+
+
+
+Variable names
+--------------------------------------------------------------------------------
+Name                Description
+------------------- ------------------------------------------------------------
+[V1] impdiff        Try new and different things in life
+[V2] impenv         Care for nature and environment
+[V3] impfree        Make own decisions and be free
+[V4] impfun         Seek fun and things that give pleasure
+[V5] imprich        Be rich, have money and expensive things
+[V6] impsafe        Live in secure and safe surroundings
+[V7] imptrad        Follow traditions and customs
+[V8] ipadvnt        Seek adventures and have an exciting life
+[V9] ipbhprp        Behave properly
+[V10] ipcrtiv       Think new ideas and being creative
+[V11] ipeqopt       People are treated equally and have equal opportunities
+[V12] ipfrule       Do what is told and follow rules
+[V13] ipgdtim       Have a good time
+[V14] iphlppl       Help people and care for others well-being
+[V15] iplylfr       Be loyal to friends and devote to people close
+[V16] ipmodst       Be humble and modest, not draw attention
+[V17] iprspot       Get respect from others
+[V18] ipshabt       Show abilities and be admired
+[V19] ipstrgv       Government is strong and ensures safety
+[V20] ipsuces       Be successful and that people recognise achievements
+[V21] ipudrst       Understand different people
+
+The items are asked using the following response options (that will be reversed to indicate higher agreement (rather than disagreement as it currently reads):  
+1	Very much like me
+2	Like me
+3	Somewhat like me
+4	A little like me
+5	Not like me
+6	Not like me at all
+
+## Reading and preprocessing the data
+
+```{r data-prep}
+pacman::p_load(haven,       # To import different data types
+               magrittr,    # For the %<>% operator
+               mgm,         # Analyze Mixed Graphical Models
+               NetworkComparisonTest,  # Compare networks
+               osfr,        # Download OSF data
+               qgraph,      # Create stunning network figures
+               psych,       # Calculate summary statistics
+               sjPlot,      # Many useful data manipulation and data viz functions
+               tidyverse,    # Manipulate data the 'tidy' way
+               bootnet,      # nonparametric bootstrap
+               EGAnet,       # EGA / bootEGA
+               survey        # survey-weighted regression and design-based standard errors
+               )
+
+## Import the ESS - Round 9 and 10 
+## (v3.2 F2F - 22 Countries and v3.1 Self-Completion - 9 Countries)   
+df <- read.csv('ESS9e03_2-ESS10-subset.csv')
+names(df)
+
+## Subset the data (keeping only variables needed for network analysis)
+## Remove missing values (that causes error messages)
+df.sub <- df %>%
+  select(impdiff:ipudrst,  # BHV items
+         essround, # Round (Wave 9 or 10)
+         cntry # Country
+         ) %>%
+  drop_na()  # Remove any NAs
+
+## There are 21 Basic Human Values
+names(df.sub)
+
+## Current response options
+## 1	Very much like me
+## 2	Like me
+## 3	Somewhat like me
+## 4	A little like me
+## 5	Not like me
+## 6	Not like me at all
+
+## Reverse code value statements so 6 = 'very much like me'
+df.sub %<>%
+    mutate(across(impdiff:ipudrst, 
+              ~ case_when(. == '1' ~ 6, 
+                          . == '2' ~ 5, 
+                          . == '3' ~ 4, 
+                          . == '4' ~ 3, 
+                          . == '5' ~ 2, 
+                          . == '6' ~ 1)
+      )
+    )
+
+sumstats <- df.sub %>% 
+  describeBy(group = c('essround','cntry'),
+              mat = TRUE) 
+
+## Function to subset by country
+table(df.sub$cntry)
+countries <- df.sub %>% 
+  distinct(cntry) %>%
+  unlist()
+
+## Prepare Data for Network Analysis -- Wave 9 
+df.store.w9 <- list()
+for (i in 1:length(countries)) {
+  df.store.w9[[i]] <- df.sub %>%  # Store results of loop in item
+    filter(essround == 9 & cntry == countries[[i]]) %>%  # Subset data by country
+    select(!c(essround, cntry)) %>% # Remove country name for mgm()
+    drop_na() %>%  # Remove any lingering NAs
+    data.matrix()  # Convert to numeric matrix
+}
+
+## Prepare Data for Network Analysis -- Wave 10
+df.store.w10 <- list()
+for (i in 1:length(countries)) {
+  df.store.w10[[i]] <- df.sub %>%  # Store results of loop in item
+    filter(essround == 10 & cntry == countries[[i]]) %>%  # Subset data by country
+    select(!c(essround, cntry)) %>% # Remove country name for mgm()
+    drop_na() %>%  # Remove any lingering NAs
+    data.matrix()  # Convert to numeric matrix
+}
+
+```
+
+Testing whether value endorsement differs between the pre-pandemic and pandemic rounds.
+Before conducting the network analysis, let's check whether there are statistically significant differences in values pre- and post-pandemic. We could also do this across countries if we were so inclined.
+
+
+## Comparing item endorsement levels across rounds (survey-weighted regression)
+
+Before any network is estimated, item scores in ESS Round 9 and Round 10 are compared with survey-weighted regression, holding country constant through fixed effects,
+with standard errors computed from the ESS analysis weights and the stratified multistage design. This is a free-standing complement to the network analysis. It is **not** a precondition or a screening test for estimating the networks.
+
+```{r level-test}
+## ---- 1.1 Fix the item set and the country set -----------------------------
+
+# Pull the names of the 21 value items once and reuse them in every later across()/all_of() call.
+# Hard-coding impdiff:ipudrst in several places would mean several places to update if the item set ever changed.
+bhv <- df.sub %>%              # df.sub is used only to read column names, not its data
+  select(impdiff:ipudrst) %>%  # the 21 items sit in one contiguous block in the data frame
+  names()                      # keep the names and discard the data
+
+# The extract holds 31 countries, but only 20 took part in both Round 9 and Round 10.
+# The other 11 (AT/CY/DE/DK/ES/LV/PL/RS/SE in R9 only; GR/MK in R10 only) cannot be compared across rounds,
+# and if they were left in, the NCT loop below would be handed a zero-row matrix and fail.
+countries.both <- df.sub %>%
+  distinct(cntry, essround) %>%  # one row per country-by-round combination
+  count(cntry) %>%               # how many rounds each country appears in, 1 or 2
+  filter(n == 2) %>%             # keep only the countries present in both rounds
+  pull(cntry) %>%                # extract as a character vector
+  sort()                         # sorting fixes the loop order, so output tables are reproducible row for row
+
+length(countries.both)           # expected: 20
+countries.both                   # printed so the country list can be checked by eye
+
+## ---- 1.2 Rebuild the analysis data with the design variables ---------------
+
+# Why df.sub cannot be reused here:
+#  (1) its select() kept only the 21 items plus essround and cntry, so anweight, stratum and psu
+#      were dropped;
+#  (2) its drop_na() ran BEFORE reverse coding, and codes 7/8/9 only become NA during reverse
+#      coding, so df.sub still carries those missing values
+#      (only df.store.w9/w10 drop them a second time inside their loops, so only those lists are clean).
+# The data are therefore rebuilt from the raw df, with the order corrected: reverse code first, then drop missing.
+df.svy <- df %>%
+  select(all_of(bhv), essround, cntry, anweight, stratum, psu) %>%
+  mutate(across(all_of(bhv),
+                ~ case_when(. == 1 ~ 6,
+                            . == 2 ~ 5,
+                            . == 3 ~ 4,
+                            . == 4 ~ 3,
+                            . == 5 ~ 2,
+                            . == 6 ~ 1))) %>%
+  drop_na(all_of(bhv)) %>%
+  filter(cntry %in% countries.both) %>%
+  mutate(
+    r10   = as.numeric(essround == 10),   # round dummy: R9 = 0 (reference), R10 = 1
+    cntry = factor(cntry),                # as a factor, svyglm expands this into 19 country dummies
+
+    # Stratum ID: built with paste rather than interaction().
+    # interaction() builds the full cartesian product of levels before discarding the empty ones, even with drop = TRUE;
+    # paste is O(n) and touches only the 62755 rows, so its cost is negligible.
+    strat_id = factor(paste(cntry, essround, stratum, sep = "_")),
+
+    # PSU ID: stratum is pasted in as well, so each PSU is explicitly nested within its stratum.
+    # That is exactly what nest = TRUE would do, which is why nest must be set to FALSE below.
+    # Left at TRUE, survey calls interaction() again on about 4600 by about 31800 levels,
+    # attempting to build 146 million label strings (roughly 8 GB), which is what made an earlier run hang.
+    psu_id   = factor(paste(cntry, essround, stratum, psu, sep = "_"))
+  )
+
+nrow(df.svy)            # expected: 62755
+table(df.svy$essround)  # expected: 31687 in R9 and 31068 in R10
+
+## ---- Build the survey design object ---------------------------------------
+
+# Finland (about 877/788 strata) and Iceland (347/372) necessarily contain strata holding a single PSU.
+# survey cannot compute a within-stratum variance for those and stops with an error by default. "adjust" substitutes
+# the population mean for the stratum mean, which is the conservative choice (it inflates the variance). It affects every standard error reported here and is stated in the Methods chapter and in Appendix C2.
+options(survey.lonely.psu = "adjust")
+
+des <- svydesign(ids     = ~psu_id,    # PSU already includes stratum, so IDs are globally unique and explicitly nested
+                 strata  = ~strat_id,  # stratification variable
+                 weights = ~anweight,  # ESS analysis weight = pspwght x pweight
+                 data    = df.svy,
+                 nest    = FALSE)      # critical: IDs are already unique, and TRUE triggers the cartesian blow-up described above
+
+degf(des)   # design degrees of freedom = number of PSUs minus number of strata; printing a number here confirms the design is usable
+
+## ---- 1.4 One weighted regression per item ---------------------------------
+
+# Model: item ~ r10 + cntry
+#   The r10 coefficient compares the two rounds WITHIN country, then averages across countries by weight.
+#   Country fixed effects are included to condition out the change in country composition between rounds:
+#   the UK sample falls from 2122 to 1102 and the Bulgarian sample rises from 1503 to 2545, and without
+#   country controls those compositional shifts would be read as changes in values.
+
+lvl.res <- bind_rows(lapply(bhv, function(v) {  # one regression per item, results stacked into a single table
+
+  # paste0 builds a string such as "impdiff ~ r10 + cntry", which as.formula turns into a formula object
+  fit <- svyglm(as.formula(paste0(v, " ~ r10 + cntry")), design = des)
+
+  # The r10 row of the coefficient table: a named vector of Estimate / Std. Error / t value / Pr(>|t|)
+  s  <- summary(fit)$coefficients["r10", ]
+
+  # Design-based 95% confidence interval; confint.svyglm uses degf(des) for the degrees of freedom
+  ci <- confint(fit)["r10", ]
+
+  # Weighted population variance pooled over both rounds. Its square root is the standard deviation used to
+  # convert the raw score difference into a standardised effect size. svyvar returns a 1x1 matrix here.
+  sdp <- sqrt(as.numeric(svyvar(as.formula(paste0("~", v)), des)))
+
+  tibble(item    = v,                 # item variable name
+         b       = s[["Estimate"]],   # raw score difference R10 minus R9, in scale points (1-6), directly interpretable
+         se      = s[["Std. Error"]], # design-based standard error (stratification, clustering and weights all accounted for)
+         ci_lo   = ci[[1]],           # lower 95% CI bound, raw score scale
+         ci_hi   = ci[[2]],           # upper 95% CI bound, raw score scale
+         sd_pool = sdp,               # pooled weighted standard deviation, the denominator of the standardisation
+         d       = b     / sdp,       # standardised effect size, comparable across items and to the literature
+         d_lo    = ci_lo / sdp,       # lower CI bound on the effect size (a linear rescaling, so simple division is exact)
+         d_hi    = ci_hi / sdp,       # upper CI bound on the effect size
+         p_raw   = s[["Pr(>|t|)"]])   # unadjusted p value
+}))
+
+# The 21 items form one family of tests, so the family-wise error rate has to be controlled.
+# Holm and Bonferroni control the same quantity (FWER), but Holm is uniformly more powerful, so Holm is what the report uses.
+lvl.res <- lvl.res %>%
+  mutate(p_holm = p.adjust(p_raw, method = "holm"),
+         p_bonf = p.adjust(p_raw, method = "bonferroni")) %>%
+  arrange(desc(abs(d)))   # largest absolute effect sizes first, so the items worth attention head the table
+
+print(lvl.res, n = 21)                                            # all 21 rows
+write.csv(lvl.res, "level_test_weighted.csv", row.names = FALSE)  # written out for the report tables and for Part 2
+
+## ---- 1.5 Note on the figure ------------------------------------------------
+
+# Figure 4 of the report (standardised round differences for the 21 items) is drawn in the plotting section of Part 2,
+# where the shared theme, palette and item labels live, so that one figure never appears in two different styles.
+# This chunk is responsible only for writing level_test_weighted.csv, which that section reads back.
+
+
+
+
+```
+
+## Restoring the signs of the edge weights
+
+`mgm()` stores edge magnitude and edge sign separately, in `pairwise$wadj` and `pairwise$signs`.
+Every network in the formal pipeline uses the sign-restored adjacency matrix, so the step is written once as a function and reused throughout. Anyone checking a reported edge weight should apply this same function.
+
+```{r signed-wadj}
+get_signed_wadj <- function(model) {
+  W <- model$pairwise$wadj * model$pairwise$signs
+  diag(W) <- 0
+  W[is.na(W)] <- 0
+  W
+}
+```
+
+## Formal analysis of the 20 countries
+
+What follows is the formal pipeline for the study as planned. The target of inference is always the full set of 20 countries with PVQ-21 data in both rounds.
+The countries shown as examples in the report are chosen only after all formal results are complete, and are used for illustrative plotting alone. They play no part in sample selection, model estimation, the NCT or the multiple-comparison correction.
+
+### 1. Estimate and cache the 40 formal MGM networks
+
+```{r multicountry-main-networks}
+## ---- 1.0 All formal parameters defined in one place -----------------------
+
+ANALYSIS_VERSION <- "mgm_multicountry_v3"
+MGM_K             <- 2L
+MGM_LAMBDA_GAM    <- 0.50
+MGM_LAMBDA_SEL    <- "EBIC"
+MGM_RULE           <- "AND"
+MGM_THRESHOLD      <- "LW"
+MGM_SCALE          <- TRUE
+MGM_BINARY_SIGN    <- FALSE  # all 21 nodes are treated as Gaussian, so binarySign does not apply here
+NETWORK_SEED_BASE <- 20260825L
+CHANGE_TOL        <- 1e-12
+
+RESULT_DIR <- file.path("multicountry_results", ANALYSIS_VERSION)
+dir.create(RESULT_DIR, recursive = TRUE, showWarnings = FALSE)
+
+stopifnot(length(countries.both) == 20L)
+stopifnot(length(bhv) == 21L)
+
+## Every country uses the same node order and the same complete-case rule
+make_network_data <- function(round_no) {
+  out <- lapply(countries.both, function(cc) {
+    df.sub %>%
+      filter(essround == round_no, cntry == cc) %>%
+      select(all_of(bhv)) %>%
+      drop_na() %>%
+      data.matrix()
+  })
+  names(out) <- countries.both
+  out
+}
+
+d9  <- make_network_data(9)
+d10 <- make_network_data(10)
+
+sample_sizes <- tibble(
+  cntry = countries.both,
+  n9    = vapply(d9, nrow, integer(1)),
+  n10   = vapply(d10, nrow, integer(1))
+)
+
+if (any(sample_sizes$n9 == 0L | sample_sizes$n10 == 0L)) {
+  stop("At least one included country has no complete cases in one wave; formal analysis cannot continue.", call. = FALSE)
+}
+if (any(vapply(c(d9, d10), ncol, integer(1)) != length(bhv))) {
+  stop("At least one country-wave dataset does not contain 21 nodes; formal analysis cannot continue.", call. = FALSE)
+}
+
+## The data signature exists to stop the script silently reading a stale cache after the data or the parameters change
+data_signature <- list(
+  n9    = vapply(d9, nrow, integer(1)),
+  n10   = vapply(d10, nrow, integer(1)),
+  sum9  = vapply(d9,  function(x) sum(x, na.rm = TRUE), numeric(1)),
+  sum10 = vapply(d10, function(x) sum(x, na.rm = TRUE), numeric(1))
+)
+
+network_metadata <- list(
+  analysis_version = ANALYSIS_VERSION,
+  countries        = countries.both,
+  nodes            = bhv,
+  k                = MGM_K,
+  lambda_sel       = MGM_LAMBDA_SEL,
+  lambda_gam       = MGM_LAMBDA_GAM,
+  rule             = MGM_RULE,
+  threshold        = MGM_THRESHOLD,
+  scale            = MGM_SCALE,
+  binary_sign      = MGM_BINARY_SIGN,
+  data_signature   = data_signature,
+  r_version        = R.version.string,
+  mgm_version      = as.character(packageVersion("mgm"))
+)
+
+fit_mgm_network <- function(data) {
+  fit <- mgm(
+    data      = data,
+    type      = rep("g", ncol(data)),
+    level     = rep(1, ncol(data)),
+    k         = MGM_K,
+    lambdaSel = MGM_LAMBDA_SEL,
+    lambdaGam = MGM_LAMBDA_GAM,
+    ruleReg   = MGM_RULE,
+    threshold = MGM_THRESHOLD,
+    scale     = MGM_SCALE,
+    binarySign = MGM_BINARY_SIGN
+  )
+
+  W <- get_signed_wadj(fit)
+  rownames(W) <- colnames(W) <- bhv
+
+  if (!all(dim(W) == c(length(bhv), length(bhv)))) {
+    stop("The adjacency matrix has incorrect dimensions.")
+  }
+  if (max(abs(W - t(W))) > 1e-10) {
+    stop("The adjacency matrix is not symmetric.")
+  }
+  if (any(!is.finite(W)) || any(diag(W) != 0)) {
+    stop("The adjacency matrix contains non-finite values or a non-zero diagonal.")
+  }
+
+  list(model = fit, W = W)
+}
+
+NETWORK_CACHE_FILE <- file.path(RESULT_DIR, "mgm_network_cache.rds")
+
+if (file.exists(NETWORK_CACHE_FILE)) {
+  network_cache <- readRDS(NETWORK_CACHE_FILE)
+  if (!identical(network_cache$metadata, network_metadata)) {
+    warning("The formal-network cache does not match the current data or parameters and has been reset.")
+    network_cache <- list(metadata = network_metadata, results = list(), errors = list())
+  }
+} else {
+  network_cache <- list(metadata = network_metadata, results = list(), errors = list())
+}
+
+## Save after every country, so an interrupted run only has to re-fit the countries that have not yet succeeded
+for (cc in countries.both) {
+  if (!is.null(network_cache$results[[cc]])) next
+
+  message("Formal MGM networks: ", cc,
+          " (n9 = ", nrow(d9[[cc]]), ", n10 = ", nrow(d10[[cc]]), ")")
+  set.seed(NETWORK_SEED_BASE + match(cc, countries.both))
+
+  one_country <- tryCatch(
+    list(
+      R9  = fit_mgm_network(d9[[cc]]),
+      R10 = fit_mgm_network(d10[[cc]])
+    ),
+    error = function(e) structure(list(message = conditionMessage(e)), class = "network_fit_error")
+  )
+
+  if (inherits(one_country, "network_fit_error")) {
+    network_cache$errors[[cc]] <- one_country$message
+  } else {
+    network_cache$results[[cc]] <- one_country
+    network_cache$errors[[cc]] <- NULL
+  }
+  saveRDS(network_cache, NETWORK_CACHE_FILE)
+}
+
+missing_networks <- setdiff(countries.both, names(network_cache$results))
+if (length(missing_networks) > 0L) {
+  error_text <- vapply(missing_networks, function(cc) {
+    error_message <- network_cache$errors[[cc]]
+    if (is.null(error_message)) error_message <- "Unknown error"
+    paste0(cc, ": ", error_message)
+  }, character(1))
+  stop(paste("Formal network estimation has not succeeded for the following countries:", paste(error_text, collapse = "; ")),
+       call. = FALSE)
+}
+
+## Models and sign-restored matrices are cached separately, because the NCT, the plotting, the difference networks and the audit each reuse them
+network_models_all <- setNames(lapply(countries.both, function(cc) {
+  list(R9  = network_cache$results[[cc]]$R9$model,
+       R10 = network_cache$results[[cc]]$R10$model)
+}), countries.both)
+
+signed_networks_all <- setNames(lapply(countries.both, function(cc) {
+  list(R9  = network_cache$results[[cc]]$R9$W,
+       R10 = network_cache$results[[cc]]$R10$W)
+}), countries.both)
+
+saveRDS(network_models_all, file.path(RESULT_DIR, "mgm_models_40.rds"))
+saveRDS(signed_networks_all, file.path(RESULT_DIR, "signed_networks_40.rds"))
+
+## Per-network diagnostics. All 40 rows must pass before any of these results are written up
+network_diagnostics <- bind_rows(lapply(countries.both, function(cc) {
+  bind_rows(lapply(c("R9", "R10"), function(wave) {
+    W <- signed_networks_all[[cc]][[wave]]
+    edge_values <- W[upper.tri(W)]
+    tibble(
+      cntry              = cc,
+      wave               = wave,
+      n                  = if (wave == "R9") nrow(d9[[cc]]) else nrow(d10[[cc]]),
+      n_nodes            = nrow(W),
+      symmetric          = max(abs(W - t(W))) <= 1e-10,
+      zero_diagonal      = all(diag(W) == 0),
+      all_finite         = all(is.finite(W)),
+      n_edges            = sum(abs(edge_values) > CHANGE_TOL),
+      n_positive_edges   = sum(edge_values > CHANGE_TOL),
+      n_negative_edges   = sum(edge_values < -CHANGE_TOL),
+      global_strength    = sum(abs(edge_values)),
+      mean_present_edge  = ifelse(sum(abs(edge_values) > CHANGE_TOL) == 0L,
+                                  NA_real_,
+                                  mean(abs(edge_values[abs(edge_values) > CHANGE_TOL])))
+    )
+  }))
+}))
+
+if (!all(network_diagnostics$symmetric &
+         network_diagnostics$zero_diagonal &
+         network_diagnostics$all_finite &
+         network_diagnostics$n_nodes == length(bhv))) {
+  stop("At least one of the 40 networks failed the matrix diagnostics.", call. = FALSE)
+}
+
+write.csv(network_diagnostics,
+          file.path(RESULT_DIR, "network_diagnostics_40.csv"),
+          row.names = FALSE)
+
+## Descriptive global properties for all 20 countries
+global_props_all <- network_diagnostics %>%
+  select(cntry, wave, n, n_edges, global_strength, mean_present_edge) %>%
+  mutate(density = n_edges / choose(length(bhv), 2)) %>%
+  pivot_wider(names_from = wave,
+              values_from = c(n, n_edges, density, global_strength, mean_present_edge)) %>%
+  mutate(global_strength_diff = global_strength_R10 - global_strength_R9)
+
+write.csv(global_props_all,
+          file.path(RESULT_DIR, "global_properties_20countries.csv"),
+          row.names = FALSE)
+print(global_props_all, n = 20)
+```
+
+### 2. Build the 20 signed difference networks and describe them across countries
+
+```{r multicountry-signed-differences}
+## The difference is always defined as R10 minus R9. A positive value means the conditional association moved in the positive direction, a negative value the reverse
+difference_networks_all <- setNames(lapply(countries.both, function(cc) {
+  signed_networks_all[[cc]]$R10 - signed_networks_all[[cc]]$R9
+}), countries.both)
+
+saveRDS(difference_networks_all,
+        file.path(RESULT_DIR, "signed_difference_networks_20.rds"))
+
+edge_index <- which(upper.tri(matrix(0, length(bhv), length(bhv))), arr.ind = TRUE)
+
+difference_vectors <- do.call(rbind, lapply(countries.both, function(cc) {
+  difference_networks_all[[cc]][upper.tri(difference_networks_all[[cc]])]
+}))
+rownames(difference_vectors) <- countries.both
+colnames(difference_vectors) <- paste0(
+  bhv[edge_index[, 1]], "__", bhv[edge_index[, 2]]
+)
+
+## Edge-level summary across countries. Direction and magnitude are reported; p values are never averaged across countries
+edge_delta_summary <- bind_rows(lapply(seq_len(nrow(edge_index)), function(i) {
+  delta <- difference_vectors[, i]
+  tibble(
+    node1              = paste0("V", edge_index[i, 1]),
+    node2              = paste0("V", edge_index[i, 2]),
+    item1              = bhv[edge_index[i, 1]],
+    item2              = bhv[edge_index[i, 2]],
+    median_delta       = median(delta),
+    mean_delta         = mean(delta),
+    mean_abs_delta     = mean(abs(delta)),
+    min_delta          = min(delta),
+    max_delta          = max(delta),
+    n_positive_change  = sum(delta > CHANGE_TOL),
+    n_negative_change  = sum(delta < -CHANGE_TOL),
+    n_no_change        = sum(abs(delta) <= CHANGE_TOL)
+  )
+}))
+
+write.csv(edge_delta_summary,
+          file.path(RESULT_DIR, "cross_country_signed_edge_changes.csv"),
+          row.names = FALSE)
+
+## Country-level change magnitudes are descriptive only. They order countries by how much moved, not by significance, and are used to pick the illustrative case
+median_change_pattern <- apply(difference_vectors, 2, median)
+
+country_change_summary <- bind_rows(lapply(countries.both, function(cc) {
+  delta <- difference_vectors[cc, ]
+  tibble(
+    cntry                    = cc,
+    n9                       = nrow(d9[[cc]]),
+    n10                      = nrow(d10[[cc]]),
+    mean_signed_edge_change  = mean(delta),
+    median_signed_edge_change = median(delta),
+    mean_abs_edge_change     = mean(abs(delta)),
+    max_abs_edge_change      = max(abs(delta)),
+    l2_change                = sqrt(sum(delta^2)),
+    distance_to_median_pattern = sqrt(sum((delta - median_change_pattern)^2)),
+    n_positive_change        = sum(delta > CHANGE_TOL),
+    n_negative_change        = sum(delta < -CHANGE_TOL),
+    n_no_change              = sum(abs(delta) <= CHANGE_TOL)
+  )
+}))
+
+write.csv(country_change_summary,
+          file.path(RESULT_DIR, "country_change_patterns_20.csv"),
+          row.names = FALSE)
+print(country_change_summary, n = 20)
+```
+
+### 3. Formal NCT for all 20 countries
+
+The low-iteration test run exists only to confirm that the function and the cache work. It produces no country ranking and takes no part in choosing the illustrative case.
+For a real run, set `RUN_NCT_FORMAL` to `TRUE`. If the run is interrupted it resumes from the countries already completed.
+
+```{r multicountry-formal-nct}
+NCT_IT_TEST       <- 20L
+NCT_IT_FORMAL     <- 1000L
+NCT_SEED_BASE     <- 20261825L
+RUN_NCT_TEST      <- FALSE
+RUN_NCT_FORMAL    <- FALSE
+
+## The main NCT tests overall structure and global strength only.
+## The exploratory test of all 210 edges is run separately; dropping countries is not an acceptable way to save computation.
+nct_estimator_mgm <- function(data, ...) {
+  fit_mgm_network(data)$W
+}
+
+run_nct_one <- function(cc, iterations) {
+  NCT(
+    d9[[cc]],
+    d10[[cc]],
+    it              = iterations,
+    binary.data     = FALSE,
+    paired          = FALSE,
+    abs             = TRUE,
+    test.edges      = FALSE,
+    test.centrality = FALSE,
+    estimator       = nct_estimator_mgm,
+    progressbar     = FALSE,
+    verbose         = FALSE
+  )
+}
+
+## Pipeline test: always the first country in the list, and never saved as a formal result
+if (RUN_NCT_TEST) {
+  NCT_TEST_COUNTRY <- countries.both[1]
+  set.seed(NCT_SEED_BASE + match(NCT_TEST_COUNTRY, countries.both))
+  nct_pipeline_test <- run_nct_one(NCT_TEST_COUNTRY, NCT_IT_TEST)
+  message("The NCT pipeline test is complete; this result must not be reported or used to select countries.")
+}
+
+nct_metadata <- list(
+  analysis_version = ANALYSIS_VERSION,
+  countries        = countries.both,
+  nodes            = bhv,
+  mgm_k            = MGM_K,
+  lambda_sel       = MGM_LAMBDA_SEL,
+  lambda_gam       = MGM_LAMBDA_GAM,
+  mgm_rule         = MGM_RULE,
+  mgm_threshold    = MGM_THRESHOLD,
+  mgm_scale        = MGM_SCALE,
+  mgm_binary_sign  = MGM_BINARY_SIGN,
+  iterations       = NCT_IT_FORMAL,
+  paired           = FALSE,
+  abs              = TRUE,
+  test_edges       = FALSE,
+  data_signature   = data_signature,
+  nct_version      = as.character(packageVersion("NetworkComparisonTest"))
+)
+
+NCT_FORMAL_FILE <- file.path(
+  RESULT_DIR,
+  paste0("nct_formal_all20_it", NCT_IT_FORMAL, "_no_edge_tests.rds")
+)
+
+if (file.exists(NCT_FORMAL_FILE)) {
+  nct_cache <- readRDS(NCT_FORMAL_FILE)
+  if (!identical(nct_cache$metadata, nct_metadata)) {
+    warning("The NCT cache does not match the current data or parameters and has been reset.")
+    nct_cache <- list(metadata = nct_metadata, results = list(), errors = list())
+  }
+} else {
+  nct_cache <- list(metadata = nct_metadata, results = list(), errors = list())
+}
+
+if (RUN_NCT_FORMAL) {
+  for (cc in countries.both) {
+    if (!is.null(nct_cache$results[[cc]])) next
+
+    message("Formal NCT: ", cc,
+            " (n9 = ", nrow(d9[[cc]]), ", n10 = ", nrow(d10[[cc]]), ")")
+    set.seed(NCT_SEED_BASE + match(cc, countries.both))
+
+    one_nct <- tryCatch(
+      run_nct_one(cc, NCT_IT_FORMAL),
+      error = function(e) structure(list(message = conditionMessage(e)), class = "nct_fit_error")
+    )
+
+    if (inherits(one_nct, "nct_fit_error")) {
+      nct_cache$errors[[cc]] <- one_nct$message
+    } else {
+      nct_cache$results[[cc]] <- one_nct
+      nct_cache$errors[[cc]] <- NULL
+    }
+    saveRDS(nct_cache, NCT_FORMAL_FILE)
+  }
+}
+
+nct_completed_countries <- intersect(countries.both, names(nct_cache$results))
+NCT_FORMAL_COMPLETE <- setequal(nct_completed_countries, countries.both)
+
+nct_result_row <- function(cc) {
+  x <- nct_cache$results[[cc]]
+  tibble(
+    cntry        = cc,
+    n9           = nrow(d9[[cc]]),
+    n10          = nrow(d10[[cc]]),
+    M            = as.numeric(x$nwinv.real),
+    p_struct_raw = as.numeric(x$nwinv.pval),
+    S_R9         = as.numeric(x$glstrinv.sep[1]),
+    S_R10        = as.numeric(x$glstrinv.sep[2]),
+    S_diff       = as.numeric(x$glstrinv.sep[2] - x$glstrinv.sep[1]),
+    p_global_raw = as.numeric(x$glstrinv.pval)
+  )
+}
+
+if (length(nct_completed_countries) > 0L) {
+  nct.res <- bind_rows(lapply(nct_completed_countries, nct_result_row))
+} else {
+  nct.res <- tibble()
+}
+
+if (NCT_FORMAL_COMPLETE) {
+  nct.res <- nct.res %>%
+    arrange(match(cntry, countries.both)) %>%
+    mutate(
+      p_struct_holm = p.adjust(p_struct_raw, method = "holm"),
+      p_global_holm = p.adjust(p_global_raw, method = "holm")
+    )
+
+  write.csv(nct.res,
+            file.path(RESULT_DIR, "nct_formal_summary_all20_mgm.csv"),
+            row.names = FALSE)
+  print(nct.res, n = 20)
+} else {
+  message("Formal NCT has not yet covered all 20 countries: completed ",
+          length(nct_completed_countries), "/20. No formal summary CSV or cross-country adjusted p-values were generated.")
+}
+```
+
+### 4. Exploratory NCT for all 210 edges in all 20 countries
+
+The edge-level tests take no part in choosing countries and never use `DISPLAY_COUNTRIES`. They are run separately, after the overall NCT has finished for all 20 countries,
+and Holm correction is reported at two levels: within each country across its 210 edges, and across all 4200 tests. With 1000 permutations the smallest
+resolvable p value is about `1/1001`, so Holm correction over 4200 tests can almost never reject at this number of permutations.
+These results are therefore treated as exploratory. Signed differences and unbinarised p values are reported side by side, and countries are never ranked by a count of significant edges.
+
+```{r multicountry-exploratory-edge-nct}
+RUN_EDGE_NCT_EXPLORATORY <- FALSE
+NCT_IT_EDGES              <- 1000L
+NCT_EDGE_SEED_BASE        <- 20262825L
+
+edge_nct_metadata <- list(
+  analysis_version = ANALYSIS_VERSION,
+  countries        = countries.both,
+  nodes            = bhv,
+  mgm_k            = MGM_K,
+  lambda_sel       = MGM_LAMBDA_SEL,
+  lambda_gam       = MGM_LAMBDA_GAM,
+  mgm_rule         = MGM_RULE,
+  mgm_threshold    = MGM_THRESHOLD,
+  mgm_scale        = MGM_SCALE,
+  mgm_binary_sign  = MGM_BINARY_SIGN,
+  iterations       = NCT_IT_EDGES,
+  paired           = FALSE,
+  abs              = TRUE,
+  test_edges       = TRUE,
+  edges            = "all",
+  p_adjust_inside_nct = "none",
+  data_signature   = data_signature,
+  nct_version      = as.character(packageVersion("NetworkComparisonTest"))
+)
+
+NCT_EDGE_FILE <- file.path(
+  RESULT_DIR,
+  paste0("nct_edges_all20_it", NCT_IT_EDGES, "_raw_p.rds")
+)
+
+if (file.exists(NCT_EDGE_FILE)) {
+  edge_nct_cache <- readRDS(NCT_EDGE_FILE)
+  if (!identical(edge_nct_cache$metadata, edge_nct_metadata)) {
+    warning("The edge-level NCT cache does not match the current data or parameters and has been reset.")
+    edge_nct_cache <- list(metadata = edge_nct_metadata, results = list(), errors = list())
+  }
+} else {
+  edge_nct_cache <- list(metadata = edge_nct_metadata, results = list(), errors = list())
+}
+
+run_edge_nct_one <- function(cc) {
+  NCT(
+    d9[[cc]],
+    d10[[cc]],
+    it               = NCT_IT_EDGES,
+    binary.data      = FALSE,
+    paired           = FALSE,
+    abs              = TRUE,
+    test.edges       = TRUE,
+    edges            = "all",
+    p.adjust.methods = "none",  # keep the raw p values here; both levels of Holm correction are applied once, in the results table below
+    test.centrality  = FALSE,
+    estimator        = nct_estimator_mgm,
+    progressbar      = FALSE,
+    verbose          = FALSE
+  )
+}
+
+if (RUN_EDGE_NCT_EXPLORATORY && !NCT_FORMAL_COMPLETE) {
+  stop("The formal overall NCT must be completed for all 20 countries before running edge-level exploration.", call. = FALSE)
+}
+
+if (RUN_EDGE_NCT_EXPLORATORY) {
+  for (cc in countries.both) {
+    if (!is.null(edge_nct_cache$results[[cc]])) next
+
+    message("Exploratory all-edge NCT: ", cc, " (210 edges)")
+    set.seed(NCT_EDGE_SEED_BASE + match(cc, countries.both))
+
+    one_edge_nct <- tryCatch(
+      run_edge_nct_one(cc),
+      error = function(e) structure(list(message = conditionMessage(e)), class = "edge_nct_error")
+    )
+
+    if (inherits(one_edge_nct, "edge_nct_error")) {
+      edge_nct_cache$errors[[cc]] <- one_edge_nct$message
+    } else {
+      edge_nct_cache$results[[cc]] <- one_edge_nct
+      edge_nct_cache$errors[[cc]] <- NULL
+    }
+    saveRDS(edge_nct_cache, NCT_EDGE_FILE)
+  }
+}
+
+edge_nct_completed <- intersect(countries.both, names(edge_nct_cache$results))
+EDGE_NCT_COMPLETE <- setequal(edge_nct_completed, countries.both)
+
+extract_edge_nct_table <- function(cc) {
+  edge_table <- as.data.frame(edge_nct_cache$results[[cc]]$einv.pvals)
+  if (ncol(edge_table) < 3L) {
+    stop(paste0("The einv.pvals output for ", cc, " has an unexpected format: fewer than three columns."))
+  }
+
+  names_lower <- tolower(names(edge_table))
+  p_col <- grep("p.?value|^p$", names_lower)[1]
+  if (is.na(p_col)) p_col <- 3L
+
+  raw_node1 <- as.character(edge_table[[1]])
+  raw_node2 <- as.character(edge_table[[2]])
+  i <- match(raw_node1, bhv)
+  j <- match(raw_node2, bhv)
+
+  if (anyNA(i) || anyNA(j)) {
+    stop(paste0("The edge-level NCT node names for ", cc, " cannot be matched to the bhv node order."))
+  }
+
+  # Careful: the new columns below must not also be called node1/node2 and then referenced as item1 = node1.
+  # Inside tibble(), a later argument can see columns created by an earlier one, exactly as in a mutate() chain.
+  # If the new columns were named node1/node2, item1 = node1 would read the "V10"-style column just created
+  # rather than the original item name, which is why an earlier run produced item1/item2 columns that merely duplicated node1/node2.
+  # Using raw_node1/raw_node2, names that cannot collide with the tibble's own columns, preserves the real item names.
+  tibble(
+    cntry = cc,
+    node1 = paste0("V", i),
+    node2 = paste0("V", j),
+    item1 = raw_node1,
+    item2 = raw_node2,
+    delta_R10_minus_R9 = difference_networks_all[[cc]][cbind(i, j)],
+    abs_delta = abs(delta_R10_minus_R9),
+    p_edge_raw = as.numeric(edge_table[[p_col]])
+  )
+}
+
+if (EDGE_NCT_COMPLETE) {
+  edge_nct_results <- bind_rows(lapply(countries.both, extract_edge_nct_table)) %>%
+    group_by(cntry) %>%
+    mutate(p_edge_holm_within_country = p.adjust(p_edge_raw, method = "holm")) %>%
+    ungroup() %>%
+    mutate(p_edge_holm_all_4200 = p.adjust(p_edge_raw, method = "holm")) %>%
+    arrange(cntry, p_edge_raw)
+
+  if (nrow(edge_nct_results) != length(countries.both) * choose(length(bhv), 2)) {
+    stop("The all-edge NCT output is not 20 countries x 210 edges; incomplete results will not be exported.", call. = FALSE)
+  }
+
+  write.csv(edge_nct_results,
+            file.path(RESULT_DIR, "nct_edges_exploratory_all20.csv"),
+            row.names = FALSE)
+
+  edge_nct_country_summary <- edge_nct_results %>%
+    group_by(cntry) %>%
+    summarise(
+      min_p_raw = min(p_edge_raw),
+      n_within_country_holm_below_05 = sum(p_edge_holm_within_country < .05),
+      median_abs_delta = median(abs_delta),
+      max_abs_delta = max(abs_delta),
+      .groups = "drop"
+    )
+
+  write.csv(edge_nct_country_summary,
+            file.path(RESULT_DIR, "nct_edges_exploratory_country_summary.csv"),
+            row.names = FALSE)
+} else {
+  message("Exploratory edge NCT has not yet covered all 20 countries: completed ", length(edge_nct_completed),
+          "/20. No complete all-edge summary CSV was generated.")
+}
+```
+
+### 5. The illustrative case is chosen only after all formal results exist
+
+```{r display-countries-after-formal-analysis}
+## DISPLAY_COUNTRIES may be used for plotting only. It must never enter estimation, the NCT or any multiple-comparison correction
+if (NCT_FORMAL_COMPLETE) {
+  ## All 20 countries are ranked on the same Euclidean distance measure. No country holds a reserved display slot
+  display_pool <- country_change_summary
+
+  if (nrow(display_pool) != length(countries.both) ||
+      !setequal(display_pool$cntry, countries.both)) {
+    stop("The display-country candidate pool does not contain exactly the complete 20-country analysis set.",
+         call. = FALSE)
+  }
+
+  display_selection <- display_pool %>%
+    arrange(distance_to_median_pattern, cntry) %>%
+    mutate(
+      distance_rank = row_number(),
+      case_group = case_when(
+        distance_rank <= 3L ~ "Closest 3",
+        distance_rank > n() - 3L ~ "Farthest 3",
+        TRUE ~ "Middle"
+      ),
+      selection_rule = paste0(
+        "Ascending Euclidean distance from the all-20-country median edge-change pattern; ",
+        "ties resolved by country code"
+      )
+    ) %>%
+    select(cntry, distance_to_median_pattern, distance_rank,
+           case_group, selection_rule)
+
+  if (nrow(display_selection) != 20L ||
+      n_distinct(display_selection$cntry) != 20L ||
+      !identical(display_selection$distance_rank, seq_len(20L))) {
+    stop("The display-country ranking did not produce 20 unique countries with ranks 1 through 20.",
+         call. = FALSE)
+  }
+  if (sum(display_selection$case_group == "Closest 3") != 3L ||
+      sum(display_selection$case_group == "Middle") != 14L ||
+      sum(display_selection$case_group == "Farthest 3") != 3L) {
+    stop("The display-country grouping is not 3 closest, 14 middle, and 3 farthest countries.",
+         call. = FALSE)
+  }
+
+  DISPLAY_COUNTRIES <- display_selection$cntry
+
+  write.csv(display_selection,
+            file.path(RESULT_DIR, "display_country_selection.csv"),
+            row.names = FALSE)
+} else {
+  ## Until the formal NCT is complete, no display country is chosen and no fallback case is substituted
+  DISPLAY_COUNTRIES <- character(0)
+  display_selection <- tibble(
+    cntry = character(),
+    distance_to_median_pattern = numeric(),
+    distance_rank = integer(),
+    case_group = character(),
+    selection_rule = character()
+  )
+  message("Formal NCT for all 20 countries is incomplete; no display country was selected.")
+}
+
+print(display_selection)
+
+RUN_DISPLAY_FIGURES <- FALSE
+
+if (RUN_DISPLAY_FIGURES) {
+  FIGURE_DIR <- file.path(RESULT_DIR, "display_figures_all20_common_scale")
+  dir.create(FIGURE_DIR, recursive = TRUE, showWarnings = FALSE)
+
+  ## Node positions are fixed by all 40 R9/R10 formal networks together. The difference networks take no part in the layout
+  formal_networks_for_layout <- unname(unlist(
+    lapply(countries.both, function(cc) signed_networks_all[[cc]][c("R9", "R10")]),
+    recursive = FALSE
+  ))
+  set.seed(NETWORK_SEED_BASE + 3000L)
+  common_layout_all <- do.call(averageLayout, formal_networks_for_layout)
+
+  ## The 40 formal networks and the 20 difference networks share one edge-width scale, so the plots are comparable across countries
+  all_plot_networks <- c(
+    formal_networks_for_layout,
+    unname(difference_networks_all[countries.both])
+  )
+  global_maximum_all <- max(
+    vapply(all_plot_networks, function(W) max(abs(W)), numeric(1)),
+    .Machine$double.eps
+  )
+
+  if (!all(dim(common_layout_all) == c(length(bhv), 2L)) ||
+      any(!is.finite(common_layout_all))) {
+    stop("The common 20-country node layout is invalid.", call. = FALSE)
+  }
+  if (!is.finite(global_maximum_all) || global_maximum_all <= 0) {
+    stop("The common 20-country edge-weight maximum is invalid.", call. = FALSE)
+  }
+
+  for (cc in DISPLAY_COUNTRIES) {
+    W9    <- signed_networks_all[[cc]]$R9
+    W10   <- signed_networks_all[[cc]]$R10
+    Wdiff <- difference_networks_all[[cc]]
+    rank_cc <- display_selection$distance_rank[match(cc, display_selection$cntry)]
+
+    png(file.path(
+          FIGURE_DIR,
+          paste0(sprintf("rank_%02d_", rank_cc), "network_R9_R10_diff_", cc, ".png")
+        ),
+        width = 15, height = 5, units = "in", res = 300)
+    par(mfrow = c(1, 3))
+    qgraph(W9, layout = common_layout_all, labels = paste0("V", seq_along(bhv)),
+           posCol = "blue", negCol = "red", maximum = global_maximum_all,
+           title = paste0(cc, " R9 | distance rank ", rank_cc))
+    qgraph(W10, layout = common_layout_all, labels = paste0("V", seq_along(bhv)),
+           posCol = "blue", negCol = "red", maximum = global_maximum_all,
+           title = paste0(cc, " R10 | distance rank ", rank_cc))
+    qgraph(Wdiff, layout = common_layout_all, labels = paste0("V", seq_along(bhv)),
+           posCol = "blue", negCol = "red", maximum = global_maximum_all,
+           title = paste0(cc, " R10 - R9 | distance rank ", rank_cc))
+    dev.off()
+  }
+}
+```
+
+### 6. Accuracy audit for the networks in both rounds
+
+This step is computationally heavy. For a real run, set `RUN_NETWORK_ACCURACY` to `TRUE`.
+Both R9 and R10 receive a non-parametric bootstrap of the edge weights and a case-dropping bootstrap for centrality. Centrality is treated as supplementary throughout.
+
+```{r multicountry-network-accuracy}
+RUN_NETWORK_ACCURACY <- FALSE
+BOOTNET_N             <- 500L
+RUN_BOOTNET_SMOKE_TEST <- TRUE
+RUN_NETWORK_ACCURACY_EXPORTS <- TRUE
+BOOTNET_EQ_TOL         <- 1e-10
+
+## bootnet is given the project's single formal estimation function, rather than relying on the implicit behaviour of default = "mgm".
+## That function is called both for the initial estimate by estimateNetwork and for every bootstrap resample, so the bootstrap audits exactly the network that is reported.
+bootnet_exact_mgm_fun <- function(data) {
+  fitted <- fit_mgm_network(as.matrix(data))
+  list(graph = fitted$W, results = fitted$model)
+}
+
+estimate_bootnet_exact_mgm <- function(data) {
+  estimateNetwork(
+    data     = data,
+    fun      = bootnet_exact_mgm_fun,
+    labels   = bhv,
+    weighted = TRUE,
+    verbose  = FALSE
+  )
+}
+
+accuracy_metadata <- list(
+  analysis_version = ANALYSIS_VERSION,
+  countries        = countries.both,
+  nodes            = bhv,
+  estimator        = "custom_fun_calls_fit_mgm_network",
+  mgm_k            = MGM_K,
+  lambda_sel       = MGM_LAMBDA_SEL,
+  lambda_gam       = MGM_LAMBDA_GAM,
+  mgm_rule         = MGM_RULE,
+  mgm_threshold    = MGM_THRESHOLD,
+  mgm_scale        = MGM_SCALE,
+  mgm_binary_sign  = MGM_BINARY_SIGN,
+  n_boots          = BOOTNET_N,
+  waves            = c("R9", "R10"),
+  data_signature   = data_signature,
+  bootnet_version  = as.character(packageVersion("bootnet"))
+)
+
+ACCURACY_FILE <- file.path(RESULT_DIR, paste0("network_accuracy_b", BOOTNET_N, ".rds"))
+
+if (file.exists(ACCURACY_FILE)) {
+  accuracy_cache <- readRDS(ACCURACY_FILE)
+  if (!identical(accuracy_cache$metadata, accuracy_metadata)) {
+    warning("The accuracy cache does not match the current data or parameters and has been reset.")
+    accuracy_cache <- list(metadata = accuracy_metadata, results = list(), errors = list())
+  }
+} else {
+  accuracy_cache <- list(metadata = accuracy_metadata, results = list(), errors = list())
+}
+
+## A smoke test that gates the full run: first confirm that the same country's R10 network comes out identical through both entry points,
+## then actually complete two non-parametric bootstraps. If either step fails, the script stops before the full switch is turned on.
+run_bootnet_smoke_test <- function(cc = countries.both[1], wave = "R10") {
+  data <- if (wave == "R9") d9[[cc]] else d10[[cc]]
+  main_W <- signed_networks_all[[cc]][[wave]]
+  bootnet_estimated <- estimate_bootnet_exact_mgm(data)
+  bootnet_W <- bootnet_estimated$graph
+
+  if (!all(dim(bootnet_W) == dim(main_W))) {
+    stop("The bootnet smoke test failed: network dimensions differ from the formal network.", call. = FALSE)
+  }
+
+  max_abs_difference <- max(abs(unname(bootnet_W) - unname(main_W)))
+  if (!is.finite(max_abs_difference) || max_abs_difference > BOOTNET_EQ_TOL) {
+    stop(paste0(
+      "The bootnet smoke test failed: max(abs(W_bootnet - W_main)) = ",
+      signif(max_abs_difference, 6),
+      ", exceeding the tolerance of ", BOOTNET_EQ_TOL
+    ), call. = FALSE)
+  }
+
+  smoke_boot <- bootnet(
+    bootnet_estimated,
+    nBoots    = 2L,
+    type      = "nonparametric",
+    statistics = "edge",
+    nCores    = 1L,
+    verbose   = FALSE
+  )
+
+  list(
+    summary = tibble(
+      cntry = cc,
+      wave = wave,
+      max_abs_difference = max_abs_difference,
+      tolerance = BOOTNET_EQ_TOL,
+      bootstrap_replicates_completed = 2L
+    ),
+    estimated = bootnet_estimated,
+    smoke_boot = smoke_boot
+  )
+}
+
+if (RUN_BOOTNET_SMOKE_TEST) {
+  set.seed(NETWORK_SEED_BASE + 999L)
+  bootnet_smoke_test <- run_bootnet_smoke_test(countries.both[1], "R10")
+  print(bootnet_smoke_test$summary)
+  write.csv(bootnet_smoke_test$summary,
+            file.path(RESULT_DIR, "bootnet_estimator_smoke_test.csv"),
+            row.names = FALSE)
+}
+
+run_accuracy_wave <- function(data) {
+  estimated <- estimate_bootnet_exact_mgm(data)
+
+  list(
+    estimated_network = estimated,
+    edge_accuracy = bootnet(
+      estimated,
+      nBoots = BOOTNET_N,
+      type = "nonparametric",
+      statistics = "edge",
+      nCores = 1L,
+      verbose = FALSE
+    ),
+    centrality_stability = bootnet(
+      estimated,
+      nBoots = BOOTNET_N,
+      type = "case",
+      statistics = c("strength", "expectedInfluence"),
+      nCores = 1L,
+      verbose = FALSE
+    )
+  )
+}
+
+if (RUN_NETWORK_ACCURACY) {
+  for (cc in countries.both) {
+    if (!is.null(accuracy_cache$results[[cc]])) next
+
+    message("Two-wave network accuracy audit: ", cc)
+    set.seed(NETWORK_SEED_BASE + 1000L + match(cc, countries.both))
+
+    one_accuracy <- tryCatch(
+      list(R9 = run_accuracy_wave(d9[[cc]]),
+           R10 = run_accuracy_wave(d10[[cc]])),
+      error = function(e) structure(list(message = conditionMessage(e)), class = "accuracy_error")
+    )
+
+    if (inherits(one_accuracy, "accuracy_error")) {
+      accuracy_cache$errors[[cc]] <- one_accuracy$message
+    } else {
+      accuracy_cache$results[[cc]] <- one_accuracy
+      accuracy_cache$errors[[cc]] <- NULL
+    }
+    saveRDS(accuracy_cache, ACCURACY_FILE)
+  }
+}
+
+extract_cs <- function(boot_object, statistic_pattern) {
+  cs <- corStability(boot_object)
+  hit <- grep(statistic_pattern, names(cs), ignore.case = TRUE)
+  if (length(hit) == 0L) return(NA_real_)
+  as.numeric(cs[hit[1]])
+}
+
+accuracy_completed <- intersect(countries.both, names(accuracy_cache$results))
+if (length(accuracy_completed) > 0L) {
+  accuracy_summary <- bind_rows(lapply(accuracy_completed, function(cc) {
+    r <- accuracy_cache$results[[cc]]
+    bind_rows(lapply(c("R9", "R10"), function(wave) {
+      tibble(
+        cntry = cc,
+        wave = wave,
+        cs_strength = extract_cs(r[[wave]]$centrality_stability, "strength"),
+        cs_expected_influence = extract_cs(
+          r[[wave]]$centrality_stability, "expected.*influence|expectedInfluence"
+        )
+      )
+    }))
+  }))
+
+  write.csv(accuracy_summary,
+            file.path(RESULT_DIR, "network_accuracy_summary_two_waves.csv"),
+            row.names = FALSE)
+}
+
+## ---- 6.1 Bootstrap quantile intervals for all 210 edges, both rounds, all 20 countries -------------------
+ACCURACY_COMPLETE <- setequal(accuracy_completed, countries.both)
+
+extract_edge_accuracy_table <- function(cc, wave) {
+  edge_boot <- accuracy_cache$results[[cc]][[wave]]$edge_accuracy
+  edge_summary <- summary(edge_boot, statistics = "edge") %>%
+    ungroup()
+
+  required_columns <- c(
+    "node1", "node2", "sample", "mean", "sd", "q2.5", "q97.5", "prop0"
+  )
+  missing_columns <- setdiff(required_columns, names(edge_summary))
+  if (length(missing_columns) > 0L) {
+    stop(paste0(
+      "The edge-accuracy summary for ", cc, " ", wave,
+      " is missing columns: ", paste(missing_columns, collapse = ", ")
+    ), call. = FALSE)
+  }
+
+  item1 <- as.character(edge_summary$node1)
+  item2 <- as.character(edge_summary$node2)
+  i <- match(item1, bhv)
+  j <- match(item2, bhv)
+
+  if (anyNA(i) || anyNA(j)) {
+    stop(paste0(
+      "The edge-accuracy node names for ", cc, " ", wave,
+      " cannot be matched to the bhv node order."
+    ), call. = FALSE)
+  }
+
+  pair_id <- paste(pmin(i, j), pmax(i, j), sep = "--")
+  if (nrow(edge_summary) != choose(length(bhv), 2L) ||
+      n_distinct(pair_id) != choose(length(bhv), 2L)) {
+    stop(paste0(
+      "The edge-accuracy summary for ", cc, " ", wave,
+      " does not contain exactly 210 unique unordered edges."
+    ), call. = FALSE)
+  }
+
+  formal_W <- signed_networks_all[[cc]][[wave]]
+  formal_edge <- formal_W[cbind(i, j)]
+  if (max(abs(as.numeric(edge_summary$sample) - formal_edge)) > BOOTNET_EQ_TOL) {
+    stop(paste0(
+      "The edge-accuracy sample estimates for ", cc, " ", wave,
+      " do not reproduce the formal signed network."
+    ), call. = FALSE)
+  }
+
+  tibble(
+    cntry = cc,
+    wave = wave,
+    node1 = paste0("V", i),
+    node2 = paste0("V", j),
+    item1 = item1,
+    item2 = item2,
+    sample_edge = as.numeric(edge_summary$sample),
+    bootstrap_mean = as.numeric(edge_summary$mean),
+    bootstrap_sd = as.numeric(edge_summary$sd),
+    ci_lower_2.5 = as.numeric(edge_summary[["q2.5"]]),
+    ci_upper_97.5 = as.numeric(edge_summary[["q97.5"]]),
+    ci_includes_zero = ci_lower_2.5 <= 0 & ci_upper_97.5 >= 0,
+    bootstrap_zero_proportion = as.numeric(edge_summary$prop0)
+  )
+}
+
+if (RUN_NETWORK_ACCURACY_EXPORTS && ACCURACY_COMPLETE) {
+  accuracy_edges_all <- bind_rows(lapply(countries.both, function(cc) {
+    bind_rows(lapply(c("R9", "R10"), function(wave) {
+      extract_edge_accuracy_table(cc, wave)
+    }))
+  })) %>%
+    arrange(match(cntry, countries.both), wave, node1, node2)
+
+  expected_edge_rows <- length(countries.both) * 2L * choose(length(bhv), 2L)
+  numeric_accuracy_columns <- c(
+    "sample_edge", "bootstrap_mean", "bootstrap_sd",
+    "ci_lower_2.5", "ci_upper_97.5", "bootstrap_zero_proportion"
+  )
+
+  if (nrow(accuracy_edges_all) != expected_edge_rows) {
+    stop(paste0(
+      "The final edge-accuracy table has ", nrow(accuracy_edges_all),
+      " rows instead of the required ", expected_edge_rows, "."
+    ), call. = FALSE)
+  }
+  if (any(!vapply(accuracy_edges_all[numeric_accuracy_columns], is.numeric, logical(1))) ||
+      any(!is.finite(as.matrix(accuracy_edges_all[numeric_accuracy_columns])))) {
+    stop("The final edge-accuracy table contains non-numeric or non-finite audit values.",
+         call. = FALSE)
+  }
+  if (any(accuracy_edges_all$ci_lower_2.5 > accuracy_edges_all$ci_upper_97.5)) {
+    stop("At least one bootstrap quantile interval has its lower bound above its upper bound.",
+         call. = FALSE)
+  }
+  if (any(accuracy_edges_all$bootstrap_zero_proportion < 0 |
+          accuracy_edges_all$bootstrap_zero_proportion > 1)) {
+    stop("At least one bootstrap zero proportion lies outside [0, 1].",
+         call. = FALSE)
+  }
+
+  ACCURACY_EDGE_CSV <- file.path(
+    RESULT_DIR,
+    paste0("network_accuracy_edges_all20_two_waves_b", BOOTNET_N, ".csv")
+  )
+  write.csv(accuracy_edges_all, ACCURACY_EDGE_CSV, row.names = FALSE)
+
+  ## ---- 6.2 One standard bootnet edge-accuracy plot per country and round -----------------------
+  ACCURACY_PLOT_DIR <- file.path(
+    RESULT_DIR,
+    paste0("network_accuracy_edge_plots_b", BOOTNET_N)
+  )
+  dir.create(ACCURACY_PLOT_DIR, recursive = TRUE, showWarnings = FALSE)
+
+  expected_plot_files <- character()
+  for (cc in countries.both) {
+    for (wave in c("R9", "R10")) {
+      edge_boot <- accuracy_cache$results[[cc]][[wave]]$edge_accuracy
+      edge_plot <- plot(
+        edge_boot,
+        statistics = "edge",
+        CIstyle = "quantiles",
+        alpha = 0.05,
+        order = "sample",
+        labels = FALSE,
+        onlyNonZero = FALSE,
+        verbose = FALSE
+      ) +
+        ggtitle(paste0(cc, " ", wave, " edge-weight accuracy (", BOOTNET_N,
+                       " nonparametric bootstraps)"))
+
+      plot_file <- file.path(
+        ACCURACY_PLOT_DIR,
+        paste0("edge_accuracy_", cc, "_", wave, "_b", BOOTNET_N, ".png")
+      )
+      expected_plot_files <- c(expected_plot_files, plot_file)
+
+      ggsave(
+        filename = plot_file,
+        plot = edge_plot,
+        width = 10,
+        height = 12,
+        units = "in",
+        dpi = 300,
+        bg = "white",
+        limitsize = FALSE
+      )
+    }
+  }
+
+  if (length(expected_plot_files) != length(countries.both) * 2L ||
+      any(!file.exists(expected_plot_files))) {
+    stop("The batch edge-accuracy export did not produce all 40 expected PNG files.",
+         call. = FALSE)
+  }
+
+  message(
+    "Network-accuracy export complete: ", nrow(accuracy_edges_all),
+    " edge rows and ", length(expected_plot_files), " PNG files."
+  )
+} else if (RUN_NETWORK_ACCURACY_EXPORTS) {
+  message(
+    "Network accuracy has not yet covered all 20 countries: completed ",
+    length(accuracy_completed),
+    "/20. No final 8,400-row edge CSV or 40-plot batch was generated."
+  )
+}
+```
+
+### 7. Exploratory community analysis
+
+This section uses the glasso network of EGA, which is not the same model as the main MGM network. It serves as supplementary description only,
+and it blocks nothing: the 40 main networks, the 20-country NCT and the cross-country synthesis do not depend on it. For a real run, set `RUN_COMMUNITY_ANALYSIS` to `TRUE`.
+
+```{r multicountry-community-exploratory}
+## EGA and bootEGA for all 20 countries were completed on 2026-08-27 and written to the cache, so this switch stays FALSE.
+## The summary and export code sits outside the if block and still reads the cache and regenerates the CSV files, without re-running any bootEGA.
+## Set it back to TRUE only to recompute the community analysis itself (20 countries by 1000 bootEGA replications takes hours).
+RUN_COMMUNITY_ANALYSIS <- FALSE
+BOOT_EGA_ITER           <- 1000L
+
+adjusted_rand_index <- function(x, y) {
+  tab <- table(x, y)
+  choose2 <- function(z) z * (z - 1) / 2
+  n <- sum(tab)
+  if (n < 2L) return(NA_real_)
+
+  sum_cells <- sum(choose2(tab))
+  sum_rows  <- sum(choose2(rowSums(tab)))
+  sum_cols  <- sum(choose2(colSums(tab)))
+  expected  <- sum_rows * sum_cols / choose2(n)
+  maximum   <- 0.5 * (sum_rows + sum_cols)
+  denom     <- maximum - expected
+
+  if (abs(denom) < .Machine$double.eps) {
+    return(ifelse(identical(as.integer(x), as.integer(y)), 1, NA_real_))
+  }
+  (sum_cells - expected) / denom
+}
+
+community_metadata <- list(
+  analysis_version = ANALYSIS_VERSION,
+  countries        = countries.both,
+  nodes            = bhv,
+  model            = "glasso",
+  algorithm        = "walktrap_default",
+  boot_iterations  = BOOT_EGA_ITER,
+  data_signature   = data_signature,
+  eganet_version   = as.character(packageVersion("EGAnet"))
+)
+
+COMMUNITY_FILE <- file.path(
+  RESULT_DIR, paste0("community_exploratory_boot", BOOT_EGA_ITER, ".rds")
+)
+
+if (file.exists(COMMUNITY_FILE)) {
+  community_cache <- readRDS(COMMUNITY_FILE)
+  if (!identical(community_cache$metadata, community_metadata)) {
+    warning("The community-analysis cache does not match the current data or parameters and has been reset.")
+    community_cache <- list(metadata = community_metadata, results = list(), errors = list())
+  }
+} else {
+  community_cache <- list(metadata = community_metadata, results = list(), errors = list())
+}
+
+if (RUN_COMMUNITY_ANALYSIS) {
+  for (cc in countries.both) {
+    if (!is.null(community_cache$results[[cc]])) next
+
+    message("Exploratory community analysis: ", cc)
+    set.seed(NETWORK_SEED_BASE + 2000L + match(cc, countries.both))
+
+    one_community <- tryCatch({
+      ega9  <- EGA(d9[[cc]],  model = "glasso", plot.EGA = FALSE)
+      ega10 <- EGA(d10[[cc]], model = "glasso", plot.EGA = FALSE)
+      bega9  <- bootEGA(d9[[cc]],  iter = BOOT_EGA_ITER, model = "glasso")
+      bega10 <- bootEGA(d10[[cc]], iter = BOOT_EGA_ITER, model = "glasso")
+
+      list(
+        EGA_R9 = ega9,
+        EGA_R10 = ega10,
+        bootEGA_R9 = bega9,
+        bootEGA_R10 = bega10,
+        item_stability_R9 = itemStability(bega9),
+        item_stability_R10 = itemStability(bega10),
+        ari_R9_R10 = adjusted_rand_index(ega9$wc, ega10$wc)
+      )
+    }, error = function(e) {
+      structure(list(message = conditionMessage(e)), class = "community_error")
+    })
+
+    if (inherits(one_community, "community_error")) {
+      community_cache$errors[[cc]] <- one_community$message
+    } else {
+      community_cache$results[[cc]] <- one_community
+      community_cache$errors[[cc]] <- NULL
+    }
+    saveRDS(community_cache, COMMUNITY_FILE)
+  }
+}
+
+community_completed <- intersect(countries.both, names(community_cache$results))
+if (length(community_completed) > 0L) {
+  ## Correction made on 2026-09-06: EGA can leave an item on a community boundary unassigned as NA (iprspot in Portugal R10 is the only such case),
+  ## and unique() keeps NA as one of its values by default, which inflated the community count for such a country by one.
+  ## na.omit() must come before counting. The number of unassigned items and the number of items actually used for the ARI are exported as well, so this cannot go unnoticed again.
+  community_summary <- bind_rows(lapply(community_completed, function(cc) {
+    r   <- community_cache$results[[cc]]
+    w9  <- r$EGA_R9$wc
+    w10 <- r$EGA_R10$wc
+    tibble(
+      cntry = cc,
+      n_communities_R9  = length(unique(na.omit(w9))),
+      n_communities_R10 = length(unique(na.omit(w10))),
+      n_unassigned_R9   = sum(is.na(w9)),
+      n_unassigned_R10  = sum(is.na(w10)),
+      ## The table() call inside adjusted_rand_index() silently drops any pair containing NA.
+      ## This column records how many items each country's ARI is actually based on, so the basis can be stated in the report.
+      n_items_used_in_ari = sum(!is.na(w9) & !is.na(w10)),
+      ari_R9_R10 = r$ari_R9_R10,
+      median_item_stability_R9 =
+        median(r$item_stability_R9$item.stability$empirical.dimensions, na.rm = TRUE),
+      median_item_stability_R10 =
+        median(r$item_stability_R10$item.stability$empirical.dimensions, na.rm = TRUE)
+    )
+  }))
+
+  write.csv(community_summary,
+            file.path(RESULT_DIR, "community_summary_exploratory.csv"),
+            row.names = FALSE)
+
+  ## Per-item community stability for all 40 networks (the table required by Section 6.8 of the project outline)
+  MAX_DIM <- 7L
+  item_stability_all <- bind_rows(lapply(community_completed, function(cc) {
+    bind_rows(lapply(c("R9", "R10"), function(w) {
+      is_obj <- community_cache$results[[cc]][[paste0("item_stability_", w)]]
+      ega    <- community_cache$results[[cc]][[paste0("EGA_", w)]]
+      ed     <- is_obj$item.stability$empirical.dimensions
+      ad     <- is_obj$item.stability$all.dimensions
+      bm     <- is_obj$membership$bootstrap
+
+      props <- matrix(NA_real_, nrow = length(bhv), ncol = MAX_DIM)
+      props[, seq_len(ncol(ad))] <- ad
+      colnames(props) <- paste0("prop_dim", seq_len(MAX_DIM))
+
+      bind_cols(
+        tibble(
+          cntry = cc,
+          wave  = w,
+          node  = paste0("V", seq_along(bhv)),
+          item  = bhv,
+          empirical_community     = as.integer(ega$wc),
+          is_unassigned           = is.na(ega$wc),
+          item_stability          = as.numeric(ed),
+          prop_unassigned_in_boot = as.numeric(colMeans(is.na(bm))),
+          modal_boot_community    = as.integer(apply(ad, 1, which.max)),
+          modal_boot_proportion   = as.numeric(apply(ad, 1, max)),
+          n_communities_empirical = length(unique(na.omit(ega$wc)))
+        ),
+        as_tibble(props)
+      )
+    }))
+  }))
+
+  if (nrow(item_stability_all) != length(community_completed) * 2L * length(bhv)) {
+    stop("The per-item community stability table does not have 20 countries x 2 waves x 21 items.",
+         call. = FALSE)
+  }
+
+  write.csv(item_stability_all,
+            file.path(RESULT_DIR, "community_item_stability_all40.csv"),
+            row.names = FALSE)
+}
+```
+
+
+# Part 2. Verification of the reported results, and the figures
+
+The chunks below correspond one to one with the sections of the Results chapter, recomputing and printing every number reported there.
+This part reads only the CSV files written by Part 1 and the raw data. It re-estimates no network and re-runs no permutation test or bootstrap.
+The descriptive statistics need individual-level data, so the first chunk rebuilds an analysis sample equivalent to the one used in the formal analysis,
+and then checks that the 40 country-by-round sample sizes it produces match the formal networks exactly. A reviewer can therefore treat this part as an independent recomputation.
+
+
+```{r report-setup}
+library(dplyr)
+library(tidyr)
+library(psych)    # skew() / kurtosi(); type = 2 matches the bias-corrected formula used by pandas
+library(ggplot2)
+
+## ---- Paths -----------------------------------------------------------------
+## RES holds everything Part 1 wrote and is all that is needed to reproduce the results.
+## ALT is a legacy folder from the working project that holds copies of a few of the same files. The copies are byte-identical to those in RES,
+## so RES is always searched first and ALT is never reached when the supplementary materials are used as distributed. Its absence is expected and is handled.
+ROOT <- "."
+RES  <- file.path(ROOT, "multicountry_results", "mgm_multicountry_v3")
+ALT  <- file.path(ROOT, "20国统计")   # legacy fallback folder in the working project; not required, and absent from the distributed materials
+OUT  <- file.path(ROOT, "results_tables")
+dir.create(OUT, showWarnings = FALSE, recursive = TRUE)
+
+## Look in RES first, then in ALT. Files of the same name in the two folders have identical contents.
+find_csv <- function(fname) {
+  for (d in c(RES, ALT)) {
+    p <- file.path(d, fname)
+    if (file.exists(p)) return(p)
+  }
+    stop("Result file not found: ", fname, call. = FALSE)
+}
+
+## ---- Constants ---------------------------------------------------------------
+ITEMS <- c("impdiff","impenv","impfree","impfun","imprich","impsafe","imptrad",
+           "ipadvnt","ipbhprp","ipcrtiv","ipeqopt","ipfrule","ipgdtim","iphlppl",
+           "iplylfr","ipmodst","iprspot","ipshabt","ipstrgv","ipsuces","ipudrst")
+VALID <- 1:6           # valid responses; 7 = refusal, 8 = do not know, 9 = no answer
+N_NODES <- length(ITEMS)
+N_EDGES <- choose(N_NODES, 2)   # 210
+
+## Item to Schwartz value type and higher-order dimension, used to make the result tables readable. The mapping follows the ESS questionnaire documentation
+ITEM_MAP <- tibble::tribble(
+  ~item,      ~value_type,      ~higher_order,
+  "impdiff",  "Stimulation",    "Openness",
+  "impenv",   "Universalism",   "Self-transcendence",
+  "impfree",  "Self-direction", "Openness",
+  "impfun",   "Hedonism",       "Openness",
+  "imprich",  "Power",          "Self-enhancement",
+  "impsafe",  "Security",       "Conservation",
+  "imptrad",  "Tradition",      "Conservation",
+  "ipadvnt",  "Stimulation",    "Openness",
+  "ipbhprp",  "Conformity",     "Conservation",
+  "ipcrtiv",  "Self-direction", "Openness",
+  "ipeqopt",  "Universalism",   "Self-transcendence",
+  "ipfrule",  "Conformity",     "Conservation",
+  "ipgdtim",  "Hedonism",       "Openness",
+  "iphlppl",  "Benevolence",    "Self-transcendence",
+  "iplylfr",  "Benevolence",    "Self-transcendence",
+  "ipmodst",  "Tradition",      "Conservation",
+  "iprspot",  "Power",          "Self-enhancement",
+  "ipshabt",  "Achievement",    "Self-enhancement",
+  "ipstrgv",  "Security",       "Conservation",
+  "ipsuces",  "Achievement",    "Self-enhancement",
+  "ipudrst",  "Universalism",   "Self-transcendence"
+) %>% mutate(node = paste0("V", match(item, ITEMS)))
+
+## Short English item labels for the figures. All figures use English labels so that no Chinese font has to be available on the machine that draws them
+ITEM_EN <- c(impdiff="try new things", impenv="care for environment",
+             impfree="make own decisions", impfun="seek fun", imprich="be rich",
+             impsafe="safe surroundings", imptrad="follow traditions",
+             ipadvnt="seek adventure", ipbhprp="behave properly",
+             ipcrtiv="be creative", ipeqopt="equal opportunities",
+             ipfrule="follow rules", ipgdtim="have a good time",
+             iphlppl="help people", iplylfr="loyal to friends", ipmodst="be modest",
+             iprspot="get respect", ipshabt="show abilities",
+             ipstrgv="strong government", ipsuces="be successful",
+             ipudrst="understand others")
+
+## Chinese item labels, carried over from the Chinese-language draft of the manuscript. They appear as extra columns in some exported CSV files and are not used anywhere in the submitted report
+ITEM_CN <- c(impdiff="尝试新鲜事物", impenv="关心环境", impfree="自己做决定",
+             impfun="寻求乐趣", imprich="富有", impsafe="生活安全", imptrad="遵循传统",
+             ipadvnt="寻求冒险", ipbhprp="举止得体", ipcrtiv="有创造力",
+             ipeqopt="人人平等", ipfrule="遵守规则", ipgdtim="享受美好时光",
+             iphlppl="帮助他人", iplylfr="忠于朋友", ipmodst="谦逊低调",
+             iprspot="获得尊重", ipshabt="展示才能", ipstrgv="政府保障安全",
+             ipsuces="取得成功", ipudrst="理解他人")
+
+## Items ordered by motivational position on the Schwartz circle, so that the theoretical blocks are visible in the figures
+CIRCLE_ORDER <- c("ipcrtiv","impfree",              # Self-direction
+                  "impdiff","ipadvnt",              # Stimulation
+                  "ipgdtim","impfun",               # Hedonism
+                  "ipshabt","ipsuces",              # Achievement
+                  "imprich","iprspot",              # Power
+                  "impsafe","ipstrgv",              # Security
+                  "ipfrule","ipbhprp",              # Conformity
+                  "ipmodst","imptrad",              # Tradition
+                  "iphlppl","iplylfr",              # Benevolence
+                  "ipudrst","ipeqopt","impenv")     # Universalism
+stopifnot(setequal(CIRCLE_ORDER, ITEMS))
+ITEM_MAP <- ITEM_MAP %>%
+  mutate(item_cn = unname(ITEM_CN[item]),
+         item_en = unname(ITEM_EN[item]),
+         circle_pos = match(item, CIRCLE_ORDER),
+         higher_order_cn = recode(higher_order,
+           "Openness" = "开放改变", "Self-enhancement" = "自我提升",
+           "Conservation" = "保守", "Self-transcendence" = "自我超越"))
+
+show <- function(label, ...) cat(sprintf("[%s] ", label), ..., "\n", sep = "")
+
+## ---- Plotting setup ----------------------------------------------------------
+FIG <- file.path(ROOT, "results_figures")
+dir.create(FIG, showWarnings = FALSE, recursive = TRUE)
+
+## Palette: blue and orange for the two rounds, a blue/red diverging pair for direction of change, neutral grey for secondary objects.
+## All three pairings were checked against colour-vision-deficiency simulation, and the worst pairing is well above the threshold for discriminability.
+BLUE <- "#2a78d6"; ORANGE <- "#eb6834"; RED <- "#e34948"; GREY <- "#6f6e6a"
+
+theme_thesis <- theme_minimal(base_size = 11) +
+  theme(panel.grid.minor = element_blank(),
+        panel.grid.major.y = element_blank(),
+        panel.grid.major.x = element_line(colour = "grey88", linewidth = 0.3),
+        axis.title = element_text(colour = "#52514e"),
+        plot.title = element_text(face = "bold", size = 12),
+        plot.subtitle = element_text(colour = "#52514e", size = 9),
+        plot.caption = element_text(colour = "#52514e", size = 8, hjust = 0),
+        legend.position = "top", legend.title = element_blank())
+
+## The default ggsave device (ragg) fails to write a file on some systems, so the base png device is used as a fallback.
+## The old file is deleted first: otherwise file.exists() would still be TRUE after a failed write, the fallback branch would not trigger,
+## and a re-run would silently leave the previous version of the figure in place.
+save_fig <- function(file, plot, width = 7, height = 6, dpi = 300) {
+  if (file.exists(file)) unlink(file)
+  ok <- tryCatch({
+    suppressWarnings(ggsave(file, plot, width = width, height = height, dpi = dpi, bg = "white"))
+    file.exists(file)
+  }, error = function(e) FALSE)
+  if (!ok) {
+    ggsave(file, plot, width = width, height = height, dpi = dpi, bg = "white",
+           device = grDevices::png, type = "cairo")
+  }
+  invisible(file.exists(file))
+}
+```
+
+---
+
+## 1. Descriptive statistics
+
+## 1.0 Rebuilding the analysis sample (not a reported result)
+
+This chunk rebuilds a sample equivalent to the one used in Part 1, for use by the descriptive statistics that follow.
+The order of operations matches Part 1: values outside 1-6 on the 21 items are set to `NA`, cases with any missing item are dropped, and the items are then reverse coded.
+The chunk ends by checking that the rebuilt sample reproduces the 40 country-by-round sample sizes of the formal networks exactly. If it did not, nothing below could be trusted.
+
+```{r desc-prepare}
+raw <- read.csv(file.path(ROOT, "ESS9e03_2-ESS10-subset.csv"))
+stopifnot(length(ITEMS) == 21, all(ITEMS %in% names(raw)))
+
+df <- raw %>%
+  mutate(across(all_of(ITEMS), ~ ifelse(.x %in% VALID, .x, NA_integer_))) %>%
+  drop_na(all_of(ITEMS)) %>%
+  mutate(across(all_of(ITEMS), ~ 7L - .x))
+stopifnot(all(unlist(df[ITEMS]) %in% VALID))
+
+both20 <- df %>% distinct(cntry, essround) %>% count(cntry) %>%
+  filter(n == 2) %>% pull(cntry) %>% sort()
+sub <- df %>% filter(cntry %in% both20)
+
+## Check: the 40 country-by-round sample sizes must match the formal networks exactly
+dg_check <- read.csv(find_csv("network_diagnostics_40.csv"))
+cmp <- dg_check %>%
+  select(cntry, wave, n_network = n) %>%
+  left_join(sub %>% count(cntry, essround) %>%
+              mutate(wave = ifelse(essround == 9, "R9", "R10")) %>%
+              select(cntry, wave, n_reproduced = n),
+            by = c("cntry", "wave"))
+show("40 country-by-round sample sizes match the formal networks", all(cmp$n_network == cmp$n_reproduced))
+show("Largest absolute difference", max(abs(cmp$n_network - cmp$n_reproduced)))
+```
+
+## 1.1 The analysis sample
+
+```{r desc-sample}
+show("Countries included", length(both20))
+show("Country list", paste(both20, collapse = ", "))
+show("Complete respondents", "R9 ", sum(sub$essround == 9),
+     ", R10 ", sum(sub$essround == 10), ", total ", nrow(sub))
+
+tabA <- sub %>%
+  count(cntry, essround, name = "n") %>%
+  pivot_wider(names_from = essround, values_from = n, names_prefix = "n_R") %>%
+  mutate(ratio = n_R10 / n_R9) %>%
+  arrange(cntry)
+print(as.data.frame(tabA), row.names = FALSE, digits = 3)
+write.csv(tabA, file.path(OUT, "tableA_sample_sizes.csv"), row.names = FALSE)
+
+show("Range of single-round sample sizes", min(c(tabA$n_R9, tabA$n_R10)), " (",
+     tabA$cntry[which.min(pmin(tabA$n_R9, tabA$n_R10))], " R9) – ",
+     max(c(tabA$n_R9, tabA$n_R10)), " (",
+     tabA$cntry[which.max(pmax(tabA$n_R9, tabA$n_R10))], " R10)")
+show("Countries whose two rounds differ most in size (ratio below 0.7 or above 1.4)",
+     paste(sprintf("%s %.2f", tabA$cntry[tabA$ratio < 0.7 | tabA$ratio > 1.4],
+                   tabA$ratio[tabA$ratio < 0.7 | tabA$ratio > 1.4]), collapse = "; "))
+```
+
+## 1.2 Distribution of the 21 value items
+
+```{r desc-items}
+tabC <- sub %>%
+  select(essround, all_of(ITEMS)) %>%
+  pivot_longer(all_of(ITEMS), names_to = "item", values_to = "v") %>%
+  group_by(item, essround) %>%
+  summarise(n = n(), mean = mean(v), sd = sd(v), median = median(v),
+            skew = psych::skew(v, type = 2), kurtosis = psych::kurtosi(v, type = 2),
+            floor_pct = 100 * mean(v == 1), ceiling_pct = 100 * mean(v == 6),
+            .groups = "drop") %>%
+  left_join(ITEM_MAP, by = "item") %>%
+  mutate(item = factor(item, levels = ITEMS)) %>%
+  arrange(item, essround)
+print(as.data.frame(tabC %>% select(node, item, value_type, essround, mean, sd,
+                                    skew, kurtosis, floor_pct, ceiling_pct)),
+      row.names = FALSE, digits = 3)
+write.csv(tabC, file.path(OUT, "tableC_item_descriptives.csv"), row.names = FALSE)
+
+show("Range of item means", sprintf("%.2f - %.2f (highest %s, lowest %s)",
+     min(tabC$mean), max(tabC$mean),
+     as.character(tabC$item[which.max(tabC$mean)]), as.character(tabC$item[which.min(tabC$mean)])))
+show("Range of item standard deviations", sprintf("%.2f - %.2f", min(tabC$sd), max(tabC$sd)))
+show("Range of skewness", sprintf("%.3f - %.3f", min(tabC$skew), max(tabC$skew)))
+show("Range of excess kurtosis", sprintf("%.3f - %.3f", min(tabC$kurtosis), max(tabC$kurtosis)))
+show("Item-by-round cells with |skew| > 1", sum(abs(tabC$skew) > 1), " / ", nrow(tabC),
+     "; items involved: ", paste(unique(as.character(tabC$item[abs(tabC$skew) > 1])), collapse = ", "))
+show("Cells with |kurtosis| > 7", sum(abs(tabC$kurtosis) > 7))
+
+## Ceiling and floor effects, averaged over the two rounds
+ceil_floor <- tabC %>% group_by(item) %>%
+  summarise(ceiling_pct = mean(ceiling_pct), floor_pct = mean(floor_pct), .groups = "drop")
+show("Items with a ceiling above 25%",
+     paste(sprintf("%s (%.1f%%)",
+                   ceil_floor$item[ceil_floor$ceiling_pct > 25],
+                   ceil_floor$ceiling_pct[ceil_floor$ceiling_pct > 25]), collapse = ", "))
+show("Strongest floor effect", as.character(ceil_floor$item[which.max(ceil_floor$floor_pct)]),
+     sprintf(" (%.1f%%)", max(ceil_floor$floor_pct)))
+```
+
+Figure 1 shows the full response distribution of the 21 items in both rounds.
+
+One choice of plot needs explaining. Box plots were used at first, but they carry very little information on a six-point scale:
+across the 42 item-by-round combinations the interquartile range takes only 5 distinct (Q1, Q3) combinations,
+so most items plot on top of one another. The reason is that quantiles of discrete data necessarily fall on integers.
+With only 6 possible values and more than thirty thousand respondents per round, the two adjacent order statistics that define the
+25th, 50th and 75th percentiles are almost always equal, so linear interpolation returns that integer. The code below checks this explicitly,
+to make clear that the data themselves were never rounded. A heat map of response proportions by category is used instead:
+it keeps the full distribution of each item over the 6 options and makes the two rounds easy to compare side by side.
+
+```{r fig-item-distribution, fig.width=10, fig.height=8}
+## Check: the data are integers, and quantiles landing on integers is an inevitable property of a discrete scale rather than the result of any rounding
+stopifnot(all(unlist(sub[ITEMS]) %in% VALID))
+qs <- sub %>% select(essround, all_of(ITEMS)) %>%
+  pivot_longer(all_of(ITEMS), names_to = "item", values_to = "v") %>%
+  group_by(item, essround) %>%
+  summarise(q1 = quantile(v, .25), med = median(v), q3 = quantile(v, .75), .groups = "drop")
+show("Non-integer quantiles among the 42 item-by-round cells",
+     sum(c(qs$q1, qs$med, qs$q3) != round(c(qs$q1, qs$med, qs$q3))), " / ", 3 * nrow(qs))
+show("Distinct (Q1, Q3) combinations", nrow(distinct(qs, q1, q3)), " (this is why the box plots were so repetitive)")
+
+## Response proportions by category
+dist_dat <- sub %>%
+  select(essround, all_of(ITEMS)) %>%
+  pivot_longer(all_of(ITEMS), names_to = "item", values_to = "v") %>%
+  count(essround, item, v) %>%
+  group_by(essround, item) %>%
+  mutate(pct = 100 * n / sum(n)) %>%
+  ungroup() %>%
+  left_join(ITEM_MAP, by = "item") %>%
+  mutate(wave = factor(ifelse(essround == 9, "Round 9", "Round 10"),
+                       levels = c("Round 9", "Round 10")))
+
+## Ordered by the mean over both rounds, so items answered more towards "like me" sit at the top
+item_order <- sub %>% select(all_of(ITEMS)) %>%
+  summarise(across(everything(), mean)) %>%
+  pivot_longer(everything(), names_to = "item", values_to = "m") %>%
+  arrange(m) %>% pull(item)
+dist_dat <- dist_dat %>%
+  mutate(label = factor(sprintf("%s  (%s)", item, item_en),
+                        levels = sprintf("%s  (%s)", item_order,
+                                         ITEM_EN[item_order])))
+
+p_dist <- ggplot(dist_dat, aes(x = factor(v), y = label, fill = pct)) +
+  geom_tile(colour = "white", linewidth = 0.4) +
+  geom_text(aes(label = sprintf("%.0f", pct),
+                colour = pct > 22), size = 2.6, show.legend = FALSE) +
+  facet_wrap(~ wave) +
+  ## Sequential scale for a continuous quantity: a single blue from light to dark, with the light end meaning a proportion near zero
+  scale_fill_gradient(low = "#eaf2fd", high = "#0d366b", name = "% of\nrespondents") +
+  scale_colour_manual(values = c(`FALSE` = "#0b0b0b", `TRUE` = "white")) +
+  labs(title = "Figure 1. Response distribution of the 21 value items, by round",
+       subtitle = "Cell values are the percentage of respondents choosing each option (rows sum to 100)",
+       x = "Response  (1 = not like me at all  ...  6 = very much like me)", y = NULL,
+       caption = paste0("Pooled 20-country sample (R9 n = 31,687; R10 n = 31,068). ",
+                        "Items ordered by overall mean, lowest at the bottom.\n",
+                        "The formal round comparison, with survey weights and multiplicity correction, is reported in 3.1.")) +
+  theme_thesis +
+  theme(panel.grid = element_blank(),
+        axis.text.y = element_text(size = 8),
+        legend.position = "right", legend.title = element_text(colour = "#52514e", size = 8))
+save_fig(file.path(FIG, "fig_item_distribution.png"), p_dist, width = 10, height = 8)
+p_dist
+
+## Distribution features quoted in the report
+mode_tab <- dist_dat %>% group_by(essround, item) %>% slice_max(pct, n = 1) %>% ungroup()
+show("Items whose modal response is 5", "R9 ", sum(mode_tab$v[mode_tab$essround == 9] == 5),
+     " / 21; R10 ", sum(mode_tab$v[mode_tab$essround == 10] == 5), " / 21")
+show("Items whose modal response is 2",
+     paste(unique(mode_tab$item[mode_tab$v == 2]), collapse = ", "))
+
+top56 <- dist_dat %>% filter(v >= 5) %>% group_by(essround, item) %>%
+  summarise(p56 = sum(pct), .groups = "drop") %>%
+  pivot_wider(names_from = essround, values_from = p56, names_prefix = "R")
+print(as.data.frame(top56 %>% arrange(desc(R9)) %>% head(5)), row.names = FALSE, digits = 3)
+
+cell <- dist_dat %>% select(essround, item, v, pct) %>%
+  pivot_wider(names_from = essround, values_from = pct, names_prefix = "R") %>%
+  mutate(diff = abs(R10 - R9))
+show("Round difference across the 126 cells", sprintf("median %.2f, %.0f%% within 2 percentage points, maximum %.2f",
+     median(cell$diff), 100 * mean(cell$diff <= 2), max(cell$diff)))
+print(as.data.frame(cell %>% slice_max(diff, n = 3)), row.names = FALSE, digits = 3)
+```
+
+## 1.3 Item mean differences between the two rounds
+
+This section computes effect sizes only, to show how large the mean differences between rounds are.
+It is UNWEIGHTED and descriptive. The formal, survey-weighted significance test is in Section 3.1, and it is the one reported in the project report. The two therefore differ slightly, and Section 3.1 is the authoritative figure.
+
+```{r desc-change}
+tabD <- sub %>%
+  select(essround, all_of(ITEMS)) %>%
+  pivot_longer(all_of(ITEMS), names_to = "item", values_to = "v") %>%
+  group_by(item, essround) %>%
+  summarise(n = n(), m = mean(v), s2 = var(v), .groups = "drop") %>%
+  pivot_wider(names_from = essround, values_from = c(n, m, s2)) %>%
+  mutate(diff = m_10 - m_9,
+         s_pooled = sqrt(((n_9 - 1) * s2_9 + (n_10 - 1) * s2_10) / (n_9 + n_10 - 2)),
+         cohens_d = diff / s_pooled) %>%
+  left_join(ITEM_MAP, by = "item") %>%
+  arrange(desc(abs(cohens_d)))
+print(as.data.frame(tabD %>% select(node, item, value_type, m_9, m_10, diff, cohens_d)),
+      row.names = FALSE, digits = 3)
+write.csv(tabD, file.path(OUT, "tableD_round_difference.csv"), row.names = FALSE)
+
+show("Largest |d|", sprintf("%.3f (%s)", max(abs(tabD$cohens_d)),
+                         tabD$item[which.max(abs(tabD$cohens_d))]))
+show("Items with |d| > 0.1", sum(abs(tabD$cohens_d) > 0.1), " / 21")
+show("Items with |d| >= 0.2 (the conventional threshold for a small effect)", sum(abs(tabD$cohens_d) >= 0.2), " / 21")
+```
+
+## 1.4 Correlations among the items
+
+The mapping of items onto the ten Schwartz basic values and the four higher-order values is given in the Methods chapter.
+What follows simply exports a machine-readable version of it, used for the grouped statistics and the figure ordering in this section.
+
+```{r item-mapping}
+map_tab <- ITEM_MAP %>%
+  arrange(circle_pos) %>%
+  select(node, item, item_en, item_cn, value_type, higher_order, higher_order_cn)
+print(as.data.frame(map_tab), row.names = FALSE)
+write.csv(map_tab, file.path(OUT, "table_item_value_mapping.csv"), row.names = FALSE)
+
+show("Number of items per basic value",
+     paste(sprintf("%s=%d", names(table(ITEM_MAP$value_type)),
+                   as.vector(table(ITEM_MAP$value_type))), collapse = ", "))
+show("Number of items per higher-order value",
+     paste(sprintf("%s=%d", names(table(ITEM_MAP$higher_order)),
+                   as.vector(table(ITEM_MAP$higher_order))), collapse = ", "))
+```
+
+```{r desc-cor}
+for (rd in c(9, 10)) {
+  C  <- cor(sub %>% filter(essround == rd) %>% select(all_of(ITEMS)))
+  ut <- C[upper.tri(C)]
+  ev <- eigen(C, symmetric = TRUE, only.values = TRUE)$values
+  cat(sprintf("R%-3d r range %+.3f to %+.3f | mean %.3f | negative %.1f%% | smallest eigenvalue %.4f | condition number %.1f\n",
+              rd, min(ut), max(ut), mean(ut), 100 * mean(ut < 0), min(ev), max(ev) / min(ev)))
+  idx <- which(upper.tri(C), arr.ind = TRUE)
+  top <- order(abs(C[upper.tri(C)]), decreasing = TRUE)[1:4]
+  for (k in top) {
+    i <- idx[k, 1]; j <- idx[k, 2]
+    cat(sprintf("      %-8s - %-8s %+.3f  (%s / %s)\n", ITEMS[i], ITEMS[j], C[i, j],
+                ITEM_MAP$value_type[match(ITEMS[i], ITEM_MAP$item)],
+                ITEM_MAP$value_type[match(ITEMS[j], ITEM_MAP$item)]))
+  }
+}
+```
+
+Figure 2 draws the correlation matrix of each round as a heat map. The items are again in circle order, so that if the theoretical grouping holds,
+darker blocks should appear within each higher-order value.
+
+```{r fig-correlation-matrix, fig.width=11, fig.height=6}
+ord <- ITEM_MAP %>% arrange(circle_pos)
+cor_long <- bind_rows(lapply(c(9, 10), function(rd) {
+  C <- cor(sub %>% filter(essround == rd) %>% select(all_of(ord$item)))
+  diag(C) <- NA_real_          # the self-correlation is always 1 and carries no information, so it is left blank
+  as.data.frame(as.table(C)) %>%
+    setNames(c("x", "y", "r")) %>%
+    mutate(wave = ifelse(rd == 9, "Round 9", "Round 10"))
+})) %>%
+  mutate(wave = factor(wave, levels = c("Round 9", "Round 10")),
+         x = factor(x, levels = ord$item),
+         y = factor(y, levels = rev(ord$item)))
+
+sep <- which(ord$higher_order_cn[-1] != ord$higher_order_cn[-nrow(ord)]) + 0.5
+
+p_cor <- ggplot(cor_long, aes(x = x, y = y, fill = r)) +
+  geom_tile() +
+  geom_vline(xintercept = sep, colour = "white", linewidth = 0.6) +
+  geom_hline(yintercept = length(ITEMS) - sep + 1, colour = "white", linewidth = 0.6) +
+  facet_wrap(~ wave) +
+  ## Diverging palette: neutral grey at 0, blue for positive and red for negative correlations, with symmetric limits
+  scale_fill_gradient2(low = RED, mid = "#f0efec", high = BLUE, midpoint = 0,
+                       limits = c(-0.6, 0.6), na.value = "grey85", name = "r") +
+  labs(title = "Figure 2. Item correlation matrices, Round 9 and Round 10",
+       subtitle = "Items ordered by the Schwartz motivational circle; white lines separate the four higher-order values",
+       x = NULL, y = NULL,
+       caption = paste0("Pearson correlations on the pooled 20-country sample. Blocks along the diagonal\n",
+                        "correspond to items belonging to the same higher-order value. The grey diagonal is the\n",
+                        "self-correlation, which is always 1 and is left out.")) +
+  theme_thesis +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 7),
+        axis.text.y = element_text(size = 7),
+        panel.grid = element_blank(), legend.position = "right",
+        legend.title = element_text(colour = "#52514e"))
+save_fig(file.path(FIG, "fig_correlation_matrix.png"), p_cor, width = 11, height = 6)
+p_cor
+
+## Mean correlation within versus between higher-order values
+for (rd in c(9, 10)) {
+  C <- cor(sub %>% filter(essround == rd) %>% select(all_of(ITEMS)))
+  ho <- ITEM_MAP$higher_order[match(ITEMS, ITEM_MAP$item)]
+  vt <- ITEM_MAP$value_type[match(ITEMS, ITEM_MAP$item)]
+  ut <- upper.tri(C)
+  same_vt <- outer(vt, vt, "==") & ut
+  same_ho <- outer(ho, ho, "==") & ut & !same_vt
+  diff_ho <- outer(ho, ho, "!=") & ut
+  cat(sprintf("R%-3d within basic value %.3f (%d pairs) | within higher-order value, across basic values %.3f (%d pairs) | across higher-order values %.3f (%d pairs)\n",
+              rd, mean(C[same_vt]), sum(same_vt), mean(C[same_ho]), sum(same_ho),
+              mean(C[diff_ho]), sum(diff_ho)))
+}
+```
+
+---
+
+## 2. Objective 1: structure and precision of the 40 formal networks
+
+All networks were estimated in Part 1 (MGM, `k = 2`, `lambdaSel = "EBIC"`,
+`lambdaGam = 0.50`, `ruleReg = "AND"`, `threshold = "LW"`, `scale = TRUE`). This section only reads those results back.
+
+## 2.1 Network diagnostics
+
+```{r g1-diagnostics}
+dg <- read.csv(find_csv("network_diagnostics_40.csv"))
+
+## The global-properties table is derived here directly from the diagnostics of the 40 networks, rather than trusting a copied file.
+## If global_properties_20countries.csv happens to be present, the two are cross-checked. Its absence is expected and harmless.
+gp <- dg %>%
+  mutate(density = n_edges / N_EDGES) %>%
+  select(cntry, wave, n, n_edges, density, global_strength, mean_present_edge) %>%
+  pivot_wider(names_from = wave,
+              values_from = c(n, n_edges, density, global_strength, mean_present_edge)) %>%
+  mutate(global_strength_diff = global_strength_R10 - global_strength_R9) %>%
+  arrange(cntry)
+
+gp_file <- tryCatch(find_csv("global_properties_20countries.csv"), error = function(e) NA_character_)
+if (!is.na(gp_file)) {
+  ref <- read.csv(gp_file) %>% arrange(cntry)
+  num <- intersect(names(ref), names(gp))
+  num <- num[sapply(gp[num], is.numeric)]
+  show("Largest absolute deviation from the existing global_properties_20countries.csv",
+       signif(max(abs(as.matrix(gp[num]) - as.matrix(ref[num]))), 3),
+       " (read from ", gp_file, ")")
+}
+
+show("Number of networks", nrow(dg), " (20 countries x 2 rounds)")
+show("All pass the symmetry, zero-diagonal and finite-value checks",
+     all(dg$symmetric & dg$zero_diagonal & dg$all_finite))
+show("All networks have 21 nodes", all(dg$n_nodes == 21))
+show("Sample size range", min(dg$n), " (", dg$cntry[which.min(dg$n)], " ", dg$wave[which.min(dg$n)],
+     ") to ", max(dg$n), " (", dg$cntry[which.max(dg$n)], " ", dg$wave[which.max(dg$n)], ")")
+show("Edge count range", min(dg$n_edges), " to ", max(dg$n_edges), " (out of ", N_EDGES, " possible edges)")
+show("Positive edges in total", sum(dg$n_positive_edges), ", negative edges in total ", sum(dg$n_negative_edges),
+     sprintf(", negative edges are %.1f%% of all estimated edges", 100 * sum(dg$n_negative_edges) / sum(dg$n_edges)))
+show("Global strength range", sprintf("%.2f to %.2f", min(dg$global_strength), max(dg$global_strength)))
+
+## Reported separately by round, so that the two rounds are never merged into a single figure
+for (w in c("R9", "R10")) {
+  x <- dg %>% filter(wave == w)
+  cat(sprintf("%-4s edges %d (%s) to %d (%s), median %.0f | density %.3f to %.3f, median %.3f | positive %d, negative %d (negative %.1f%%)\n",
+      w, min(x$n_edges), x$cntry[which.min(x$n_edges)], max(x$n_edges), x$cntry[which.max(x$n_edges)],
+      median(x$n_edges), min(x$n_edges)/N_EDGES, max(x$n_edges)/N_EDGES, median(x$n_edges)/N_EDGES,
+      sum(x$n_positive_edges), sum(x$n_negative_edges),
+      100 * sum(x$n_negative_edges) / sum(x$n_edges)))
+}
+show("Correlation between edge count and sample size", sprintf("R9 %.3f, R10 %.3f",
+     cor(dg$n_edges[dg$wave == "R9"], dg$n[dg$wave == "R9"]),
+     cor(dg$n_edges[dg$wave == "R10"], dg$n[dg$wave == "R10"])))
+show("Negative edges per network, range", min(dg$n_negative_edges), " to ", max(dg$n_negative_edges),
+     sprintf("; as a share of that network's edges, %.1f%% to %.1f%%",
+             min(100 * dg$n_negative_edges / dg$n_edges),
+             max(100 * dg$n_negative_edges / dg$n_edges)))
+```
+
+The report uses France to illustrate what positive and negative edges mean. The selection rule is given in Section 3.4: France is the country closest to the median change pattern of the 20.
+The figure itself is the existing three-panel file, which is not regenerated here.
+
+```{r fr-example-edges}
+acc_fr <- read.csv(find_csv("network_accuracy_edges_all20_two_waves_b500.csv")) %>%
+  filter(cntry == "FR", sample_edge != 0)
+for (w in c("R9", "R10")) {
+  x <- acc_fr %>% filter(wave == w)
+  show(paste("FR", w), "non-zero edges ", nrow(x), ", of which positive ", sum(x$sample_edge > 0),
+       ", negative ", sum(x$sample_edge < 0))
+  cat("  Strongest positive edges:\n")
+  print(as.data.frame(x %>% slice_max(sample_edge, n = 3) %>%
+        select(item1, item2, sample_edge)), row.names = FALSE, digits = 3)
+  cat("  Negative edges (all of them):\n")
+  print(as.data.frame(x %>% filter(sample_edge < 0) %>% arrange(sample_edge) %>%
+        select(item1, item2, sample_edge)), row.names = FALSE, digits = 3)
+}
+```
+
+## 2.2 Descriptive network properties and the direction of global strength
+
+```{r g1-global}
+show("Density range", sprintf("%.3f to %.3f", min(c(gp$density_R9, gp$density_R10)),
+                          max(c(gp$density_R9, gp$density_R10))))
+show("Densest country", gp$cntry[which.max(pmax(gp$density_R9, gp$density_R10))])
+show("Sparsest country", gp$cntry[which.min(pmin(gp$density_R9, gp$density_R10))])
+show("Countries whose global strength is higher in R10 than in R9", sum(gp$global_strength_diff > 0),
+     ", and lower in ", sum(gp$global_strength_diff < 0))
+
+cat("\n-- Three largest increases in global strength --\n")
+print(as.data.frame(gp %>% arrange(desc(global_strength_diff)) %>%
+        select(cntry, global_strength_R9, global_strength_R10, global_strength_diff) %>% head(3)),
+      row.names = FALSE, digits = 3)
+cat("-- Three largest decreases in global strength --\n")
+print(as.data.frame(gp %>% arrange(global_strength_diff) %>%
+        select(cntry, global_strength_R9, global_strength_R10, global_strength_diff) %>% head(3)),
+      row.names = FALSE, digits = 3)
+
+## Report Table A6
+table1 <- gp %>%
+  select(cntry, n_R9, n_R10, n_edges_R9, n_edges_R10,
+         density_R9, density_R10, global_strength_R9, global_strength_R10,
+         global_strength_diff) %>%
+  arrange(cntry)
+print(as.data.frame(table1), row.names = FALSE, digits = 3)
+write.csv(table1, file.path(OUT, "table1_network_properties.csv"), row.names = FALSE)
+```
+
+## 2.3 Edge-weight precision (500 non-parametric bootstrap replications)
+
+```{r g1-accuracy-edges}
+acc <- read.csv(find_csv("network_accuracy_edges_all20_two_waves_b500.csv"))
+stopifnot(nrow(acc) == 20 * 2 * N_EDGES)
+
+show("Total edge records", nrow(acc), " (20 countries x 2 rounds x ", N_EDGES, " edges)")
+show("Records whose 95% bootstrap interval contains 0", sum(acc$ci_includes_zero),
+     sprintf(" (%.1f%%)", 100 * mean(acc$ci_includes_zero)))
+
+nz <- acc %>% filter(sample_edge != 0)
+show("Non-zero edges in the formal networks", nrow(nz),
+     ", of which the interval excludes 0 for ", sum(!nz$ci_includes_zero),
+     sprintf(" (%.1f%%)", 100 * mean(!nz$ci_includes_zero)))
+show("Edges shrunk to exactly 0 by regularisation", sum(acc$sample_edge == 0),
+     "; do all their intervals contain 0: ", all(acc$ci_includes_zero[acc$sample_edge == 0]))
+
+## How precision varies with sample size: per country and round, the share of non-zero edges whose interval excludes 0
+prec_by_net <- nz %>%
+  group_by(cntry, wave) %>%
+  summarise(n_nonzero = n(), n_ci_excl_0 = sum(!ci_includes_zero),
+            pct_ci_excl_0 = 100 * mean(!ci_includes_zero), .groups = "drop") %>%
+  left_join(dg %>% select(cntry, wave, n), by = c("cntry", "wave"))
+show("Range across networks of the share of intervals excluding 0",
+     sprintf("%.1f%% – %.1f%%", min(prec_by_net$pct_ci_excl_0), max(prec_by_net$pct_ci_excl_0)))
+show("Correlation of that share with sample size",
+     sprintf("r = %.3f", cor(prec_by_net$pct_ci_excl_0, prec_by_net$n)))
+write.csv(prec_by_net, file.path(OUT, "table_edge_precision_by_network.csv"), row.names = FALSE)
+```
+
+## 2.4 Centrality stability (case-dropping bootstrap, CS coefficients)
+
+```{r g1-accuracy-cs}
+cs <- read.csv(find_csv("network_accuracy_summary_two_waves.csv"))
+stopifnot(nrow(cs) == 40)
+
+show("Median strength CS", sprintf("%.3f", median(cs$cs_strength)),
+     ", range ", sprintf("%.3f to %.3f", min(cs$cs_strength), max(cs$cs_strength)))
+show("Networks with strength CS below 0.25", sum(cs$cs_strength < 0.25),
+     ", below 0.50 ", sum(cs$cs_strength < 0.50))
+show("Median expected-influence CS", sprintf("%.3f", median(cs$cs_expected_influence)),
+     ", range ", sprintf("%.3f to %.3f", min(cs$cs_expected_influence), max(cs$cs_expected_influence)))
+show("Networks with expected-influence CS below 0.25", sum(cs$cs_expected_influence < 0.25),
+     ", below 0.50 ", sum(cs$cs_expected_influence < 0.50))
+show("Networks where expected influence exceeds strength", sum(cs$cs_expected_influence > cs$cs_strength), " / 40")
+
+cat("\n-- Three networks with the lowest strength CS --\n")
+print(as.data.frame(cs %>% arrange(cs_strength) %>% head(3)), row.names = FALSE, digits = 3)
+
+## Report Table A9
+table3 <- cs %>%
+  pivot_wider(names_from = wave, values_from = c(cs_strength, cs_expected_influence)) %>%
+  arrange(cntry)
+print(as.data.frame(table3), row.names = FALSE, digits = 3)
+write.csv(table3, file.path(OUT, "table3_centrality_stability.csv"), row.names = FALSE)
+```
+
+---
+
+## 3. Objective 2: differences in level and differences in structure
+
+## 3.1 Differences in item endorsement levels (survey-weighted)
+
+```{r g2-level}
+lv <- read.csv(file.path(ROOT, "level_test_weighted.csv")) %>%
+  left_join(ITEM_MAP, by = "item")
+
+show("Items tested", nrow(lv))
+show("Items with Holm-adjusted p < .05", sum(lv$p_holm < .05),
+     " (of which d > 0 for ", sum(lv$p_holm < .05 & lv$d > 0),
+     " items and d < 0 for ", sum(lv$p_holm < .05 & lv$d < 0), ")")
+show("Items with Bonferroni-adjusted p < .05", sum(lv$p_bonf < .05))
+show("Largest standardised difference", sprintf("%s, d = %.3f, 95%% CI [%.3f, %.3f]",
+     lv$item[which.max(abs(lv$d))], lv$d[which.max(abs(lv$d))],
+     lv$d_lo[which.max(abs(lv$d))], lv$d_hi[which.max(abs(lv$d))]))
+
+sig <- lv %>% filter(p_holm < .05) %>% arrange(desc(abs(d)))
+show("Range of |d| among the significant items", sprintf("%.3f to %.3f", min(abs(sig$d)), max(abs(sig$d))))
+show("Items with |d| >= 0.2 among all 21", sum(abs(lv$d) >= 0.2))
+
+cat("\n-- Significant items, by descending |d| --\n")
+print(as.data.frame(sig %>% select(node, item, value_type, b, se, d, d_lo, d_hi, p_holm)),
+      row.names = FALSE, digits = 3)
+cat("\n-- Items that are not significant --\n")
+print(as.data.frame(lv %>% filter(p_holm >= .05) %>% arrange(p_raw) %>%
+        select(node, item, value_type, d, d_lo, d_hi, p_raw, p_holm)),
+      row.names = FALSE, digits = 3)
+
+## Report Table A7
+table2 <- lv %>% arrange(match(item, ITEMS)) %>%
+  select(node, item, value_type, higher_order, b, se, ci_lo, ci_hi, d, d_lo, d_hi,
+         p_raw, p_holm, p_bonf)
+write.csv(table2, file.path(OUT, "table2_level_test.csv"), row.names = FALSE)
+
+## Distribution of the significant items over the higher-order values, used to discuss whether the change is concentrated in one region
+cat("\n-- Higher-order distribution of the significant items --\n")
+print(sig %>% count(higher_order, sign = ifelse(d > 0, "+", "-")), row.names = FALSE)
+```
+
+## 3.2 Formal NCT: overall structure and global strength
+
+```{r g2-nct}
+nct <- read.csv(find_csv("nct_formal_summary_all20_mgm.csv"))
+stopifnot(nrow(nct) == 20)
+
+show("Countries tested", nrow(nct), ", with 1000 permutations each")
+show("Range of the M statistic", sprintf("%.3f to %.3f, median %.3f",
+                             min(nct$M), max(nct$M), median(nct$M)))
+show("Countries with Holm-adjusted p < .05 on the structure test", sum(nct$p_struct_holm < .05))
+cat("\n-- Countries that survive correction --\n")
+print(as.data.frame(nct %>% filter(p_struct_holm < .05) %>%
+        select(cntry, n9, n10, M, p_struct_raw, p_struct_holm)), row.names = FALSE, digits = 4)
+cat("-- Raw p < .05 but not significant after correction --\n")
+print(as.data.frame(nct %>% filter(p_struct_raw < .05, p_struct_holm >= .05) %>%
+        arrange(p_struct_raw) %>% select(cntry, M, p_struct_raw, p_struct_holm)),
+      row.names = FALSE, digits = 4)
+
+show("Global strength: every Holm-adjusted p equals 1", all(nct$p_global_holm == 1))
+show("Global strength: smallest raw p", sprintf("%.4f (%s)", min(nct$p_global_raw),
+                                        nct$cntry[which.min(nct$p_global_raw)]))
+show("Global strength: countries with raw p < .05", sum(nct$p_global_raw < .05))
+
+cat("\n-- Hungary and Estonia: structure significance alongside global strength --\n")
+print(as.data.frame(nct %>% filter(cntry %in% c("HU", "EE")) %>%
+        select(cntry, M, p_struct_holm, S_R9, S_R10, S_diff, p_global_raw, p_global_holm)),
+      row.names = FALSE, digits = 4)
+
+## Report Table A15 (full NCT summary for the 20 countries)
+write.csv(nct %>% arrange(cntry), file.path(OUT, "table4_nct_summary.csv"), row.names = FALSE)
+```
+
+## 3.3 Exploratory edge-level tests (4200 edges)
+
+```{r g2-edges}
+ed <- read.csv(find_csv("nct_edges_exploratory_all20.csv"))
+stopifnot(nrow(ed) == 20 * N_EDGES)
+## Label self-check: item1/item2 must hold real item names, not V numbers
+stopifnot(!any(grepl("^V[0-9]+$", ed$item1)), all(ed$item1 %in% ITEMS))
+
+show("Edge tests in total", nrow(ed), " (20 countries x ", N_EDGES, " edges)")
+show("Smallest raw p", signif(min(ed$p_edge_raw), 4),
+     " (= 1/1001, the resolution limit at 1000 permutations)")
+show("Edges reaching that resolution limit", sum(ed$p_edge_raw <= 1/1001 + 1e-12))
+show("Edges with raw p < .05", sum(ed$p_edge_raw < .05),
+     sprintf(" (%.1f%%, against about 5%% expected by chance)", 100 * mean(ed$p_edge_raw < .05)))
+show("Edges with p < .05 after Holm correction within country", sum(ed$p_edge_holm_within_country < .05))
+show("Edges with p < .05 after Holm correction across all 4200 tests", sum(ed$p_edge_holm_all_4200 < .05))
+show("Smallest within-country Holm p", sprintf("%.3f (%s)", min(ed$p_edge_holm_within_country),
+     ed$cntry[which.min(ed$p_edge_holm_within_country)]))
+
+cat("\n-- Five largest absolute changes among all 4200 edges --\n")
+print(as.data.frame(ed %>% slice_max(abs_delta, n = 5) %>%
+        select(cntry, item1, item2, delta_R10_minus_R9, p_edge_raw,
+               p_edge_holm_within_country)), row.names = FALSE, digits = 3)
+
+cat("-- The largest change in Hungary and in Estonia --\n")
+hu_ee <- ed %>% filter(cntry %in% c("HU", "EE")) %>% group_by(cntry) %>%
+  slice_max(abs_delta, n = 1) %>% ungroup()
+print(as.data.frame(hu_ee %>% select(cntry, item1, item2, delta_R10_minus_R9,
+                                     p_edge_raw, p_edge_holm_within_country)),
+      row.names = FALSE, digits = 3)
+
+## Key cross-check: the NCT M statistic IS the largest absolute edge difference, so it must match the table above
+cat("\n-- Cross-check: M statistic equals each country's largest absolute edge difference --\n")
+chk <- ed %>% group_by(cntry) %>% summarise(max_abs_delta = max(abs_delta), .groups = "drop") %>%
+  left_join(nct %>% select(cntry, M), by = "cntry") %>%
+  mutate(diff = abs(max_abs_delta - M))
+show("Largest |max_abs_delta - M| across the 20 countries", signif(max(chk$diff), 3))
+
+## Count of edges with raw p < .05 per country. Descriptive only, and never used to rank countries
+edge_ct <- ed %>% group_by(cntry) %>%
+  summarise(n_raw_p05 = sum(p_edge_raw < .05), min_p = min(p_edge_raw),
+            max_abs_delta = max(abs_delta), median_abs_delta = median(abs_delta),
+            .groups = "drop") %>% arrange(desc(n_raw_p05))
+print(as.data.frame(edge_ct), row.names = FALSE, digits = 3)
+write.csv(edge_ct, file.path(OUT, "table_edge_nct_by_country.csv"), row.names = FALSE)
+```
+
+## 3.4 Common patterns across countries, and cross-national heterogeneity
+
+```{r g2-crosscountry}
+csedge <- read.csv(find_csv("cross_country_signed_edge_changes.csv"))
+cp     <- read.csv(find_csv("country_change_patterns_20.csv"))
+dsp    <- read.csv(find_csv("display_country_selection.csv"))
+stopifnot(nrow(csedge) == N_EDGES, nrow(cp) == 20, nrow(dsp) == 20)
+
+show("Edges whose median change is exactly 0", sum(csedge$median_delta == 0),
+     sprintf(" (%.1f%%, meaning most edges show no estimated change in most countries)",
+             100 * mean(csedge$median_delta == 0)))
+
+cat("\n-- Edges moving in the same direction in 17 or more countries --\n")
+common <- csedge %>% filter(n_positive_change >= 17 | n_negative_change >= 17) %>%
+  select(item1, item2, median_delta, mean_delta, n_positive_change,
+         n_negative_change, n_no_change)
+print(as.data.frame(common), row.names = FALSE, digits = 3)
+
+cat("-- Three edges with the largest mean absolute change across countries --\n")
+print(as.data.frame(csedge %>% slice_max(mean_abs_delta, n = 3) %>%
+        select(item1, item2, mean_delta, mean_abs_delta, min_delta, max_delta)),
+      row.names = FALSE, digits = 3)
+
+show("Edges with no change, per country", sprintf("range %d to %d, median %g",
+     min(cp$n_no_change), max(cp$n_no_change), median(cp$n_no_change)))
+
+## Ranking by Euclidean distance from the median change pattern. Descriptive, not a significance ranking
+show("Distance range", sprintf("%.3f to %.3f", min(cp$distance_to_median_pattern),
+                          max(cp$distance_to_median_pattern)))
+cat("\n-- The 3 countries closest to and the 3 furthest from the median change pattern --\n")
+print(as.data.frame(dsp %>% filter(case_group != "Middle") %>%
+        select(cntry, distance_to_median_pattern, distance_rank, case_group)),
+      row.names = FALSE, digits = 4)
+cat("-- Where the two countries with significant structure tests fall in the distance ranking, showing that significance and magnitude of change are separate questions --\n")
+print(as.data.frame(dsp %>% filter(cntry %in% c("HU", "EE")) %>%
+        select(cntry, distance_rank, distance_to_median_pattern)), row.names = FALSE, digits = 4)
+
+## Magnitude of change and distance from the common pattern, country by country
+table5 <- cp %>% select(cntry, mean_abs_edge_change, max_abs_edge_change, l2_change,
+                        distance_to_median_pattern, n_positive_change,
+                        n_negative_change, n_no_change) %>%
+  left_join(dsp %>% select(cntry, distance_rank, case_group), by = "cntry") %>%
+  arrange(distance_rank)
+print(as.data.frame(table5), row.names = FALSE, digits = 3)
+write.csv(table5, file.path(OUT, "table5_country_change_patterns.csv"), row.names = FALSE)
+
+## Appendix Table A17: the report gives only the range of distances, and the full 20-country ranking goes in the appendix
+tableA17 <- table5 %>%
+  transmute(Country = cntry,
+            Rank = distance_rank,
+            Distance = sprintf("%.3f", distance_to_median_pattern),
+            `Mean absolute edge change` = sprintf("%.3f", mean_abs_edge_change))
+print(as.data.frame(tableA17), row.names = FALSE)
+write.csv(tableA17, file.path(OUT, "tableA17_distance_to_median_pattern.csv"), row.names = FALSE)
+```
+
+---
+
+## 4. Objective 3: exploratory community analysis
+
+EGA uses a glasso network, which is not the same estimation path as the main MGM networks, so these results are supplementary description only.
+
+## 4.1 Number of communities and the ARI
+
+```{r g3-community}
+cm <- read.csv(find_csv("community_summary_exploratory.csv"))
+stopifnot(nrow(cm) == 20)
+## This file was corrected on 2026-09-06: communities are counted after unassigned items (NA) have been excluded
+stopifnot(all(c("n_unassigned_R9", "n_unassigned_R10", "n_items_used_in_ari") %in% names(cm)))
+
+show("Range of community counts, R9", min(cm$n_communities_R9), " to ", max(cm$n_communities_R9))
+show("Range of community counts, R10", min(cm$n_communities_R10), " to ", max(cm$n_communities_R10))
+cat("\nDistribution of community counts, R9:\n"); print(table(cm$n_communities_R9))
+cat("Distribution of community counts, R10:\n"); print(table(cm$n_communities_R10))
+show("Countries with the same number of communities in both rounds", sum(cm$n_communities_R9 == cm$n_communities_R10), " / 20")
+show("Countries whose community count differs between rounds",
+     paste(cm$cntry[cm$n_communities_R9 != cm$n_communities_R10], collapse = ", "))
+
+show("ARI range", sprintf("%.3f to %.3f", min(cm$ari_R9_R10), max(cm$ari_R9_R10)))
+show("Median ARI", sprintf("%.3f", median(cm$ari_R9_R10)),
+     ", mean ", sprintf("%.3f", mean(cm$ari_R9_R10)))
+show("Countries with ARI = 1", paste(cm$cntry[cm$ari_R9_R10 > 0.9999], collapse = ", "))
+cat("\n-- Five countries with the lowest ARI --\n")
+print(as.data.frame(cm %>% arrange(ari_R9_R10) %>%
+        select(cntry, n_communities_R9, n_communities_R10, ari_R9_R10)),
+      row.names = FALSE, digits = 3)
+
+show("Country-round cells containing an unassigned item",
+     paste(paste0(cm$cntry[cm$n_unassigned_R10 > 0], " R10"), collapse = ", "),
+     "; unassigned cells in total ", sum(cm$n_unassigned_R9) + sum(cm$n_unassigned_R10))
+show("Countries whose ARI rests on fewer than 21 items",
+     paste(cm$cntry[cm$n_items_used_in_ari < 21], collapse = ", "),
+     " (items used = ", min(cm$n_items_used_in_ari), ")")
+
+## Report Table A13
+write.csv(cm %>% arrange(cntry), file.path(OUT, "table6_community_summary.csv"), row.names = FALSE)
+```
+
+## 4.2 Per-item community stability
+
+```{r g3-itemstability}
+st <- read.csv(find_csv("community_item_stability_all40.csv"))
+stopifnot(nrow(st) == 40 * N_NODES)
+
+show("Stability coefficient cells", nrow(st), "; defined ", sum(!is.na(st$item_stability)),
+     ", undefined ", sum(is.na(st$item_stability)))
+show("Median stability", sprintf("%.3f", median(st$item_stability, na.rm = TRUE)),
+     ", range ", sprintf("%.3f to %.3f", min(st$item_stability, na.rm = TRUE),
+                        max(st$item_stability, na.rm = TRUE)))
+show("Cells with stability >= 0.90", sum(st$item_stability >= 0.90, na.rm = TRUE),
+     sprintf(" (%.1f%%)", 100 * mean(st$item_stability >= 0.90, na.rm = TRUE)))
+show("Cells with stability < 0.70", sum(st$item_stability < 0.70, na.rm = TRUE),
+     sprintf(" (%.1f%%)", 100 * mean(st$item_stability < 0.70, na.rm = TRUE)))
+
+cat("\n-- By network: the 5 with the lowest median stability --\n")
+by_net <- st %>% group_by(cntry, wave) %>%
+  summarise(median_stability = median(item_stability, na.rm = TRUE),
+            min_stability = min(item_stability, na.rm = TRUE),
+            n_below_070 = sum(item_stability < 0.70, na.rm = TRUE), .groups = "drop") %>%
+  arrange(median_stability)
+print(as.data.frame(by_net %>% head(5)), row.names = FALSE, digits = 3)
+write.csv(by_net, file.path(OUT, "table_item_stability_by_network.csv"), row.names = FALSE)
+
+cat("\n-- By item: the 6 with the lowest mean stability across the 40 networks --\n")
+by_item <- st %>% group_by(item) %>%
+  summarise(mean_stability = mean(item_stability, na.rm = TRUE),
+            n_below_070 = sum(item_stability < 0.70, na.rm = TRUE), .groups = "drop") %>%
+  left_join(ITEM_MAP, by = "item") %>% arrange(mean_stability)
+print(as.data.frame(by_item %>% select(node, item, value_type, mean_stability, n_below_070) %>%
+        head(6)), row.names = FALSE, digits = 3)
+write.csv(by_item, file.path(OUT, "table_item_stability_by_item.csv"), row.names = FALSE)
+
+cat("\n-- The 10 least stable country-by-round-by-item cells --\n")
+print(as.data.frame(st %>% arrange(item_stability) %>%
+        select(cntry, wave, item, empirical_community, item_stability) %>% head(10)),
+      row.names = FALSE, digits = 3)
+
+## Croatia R9: its extreme values are concentrated but its median is not low. The report has to keep these two facts apart
+show("Median stability, HR R9", sprintf("%.3f", median(st$item_stability[st$cntry == "HR" & st$wave == "R9"])),
+     "; number of the 10 least stable cells it accounts for: ",
+     sum((st %>% arrange(item_stability) %>% head(10) %>% pull(cntry)) == "HR" &
+         (st %>% arrange(item_stability) %>% head(10) %>% pull(wave)) == "R9"))
+show("Network with the lowest median stability",
+     paste(by_net$cntry[1], by_net$wave[1]), sprintf(" (%.3f)", by_net$median_stability[1]))
+
+## Croatia R9: which items make up its two extra communities, and where those items land in the bootstrap
+cat("\n-- The 5 communities of HR R9, with each item's modal bootstrap assignment --\n")
+print(as.data.frame(st %>% filter(cntry == "HR", wave == "R9") %>%
+        select(item, empirical_community, item_stability,
+               modal_boot_community, modal_boot_proportion) %>%
+        arrange(empirical_community, item_stability)),
+      row.names = FALSE, digits = 3)
+
+## Diagnostics for the unassigned item in Portugal R10
+cat("\n-- The unassigned item in PT R10 --\n")
+print(as.data.frame(st %>% filter(is.na(item_stability)) %>%
+        select(cntry, wave, item, empirical_community, is_unassigned,
+               prop_unassigned_in_boot, modal_boot_community, modal_boot_proportion)),
+      row.names = FALSE, digits = 3)
+pt <- st %>% filter(is.na(item_stability))
+show("Share of bootstrap replications in which that PT R10 item did receive an assignment",
+     sprintf("%.1f%%", 100 * (1 - pt$prop_unassigned_in_boot[1])))
+```
+
+---
+
+## 5. Drawing the figures used in the report
+
+The forest plot, the three-panel appendix figure and the edge-precision plots were produced in Part 1.
+This section draws the remaining figures of the report from the CSV files read above. Figure numbers appear only in the figure titles and in the report text,
+while the output files carry descriptive names, so that inserting a new figure never requires renaming a file.
+
+On colour: positive and negative directions use a blue (`#2a78d6`) and red (`#e34948`) diverging pair, matching the `posCol`/`negCol` convention of the project qgraph network figures.
+Where direction does not need to be distinguished, a single blue is used, and secondary objects recede in neutral grey (`#6f6e6a`).
+The blue/red pair was checked against colour-vision-deficiency simulation: the worst pairing has a perceptual difference of 21.6 (protan) and 32.3 in normal vision, both far above threshold.
+Countries of interest are additionally labelled directly, so that nothing depends on colour alone.
+
+```{r g2-heterogeneity}
+## ---- Objective 2, supplementary: where in the value system the changes fall, and whether countries share one pattern ------------------
+ee <- read.csv(find_csv("nct_edges_exploratory_all20.csv")) %>%
+  left_join(ITEM_MAP %>% select(item, h1 = higher_order), by = c("item1" = "item")) %>%
+  left_join(ITEM_MAP %>% select(item, h2 = higher_order), by = c("item2" = "item"))
+
+cat("\n-- Mean absolute change across countries, grouped by higher-order value pair --\n")
+grp <- ee %>%
+  mutate(pair = ifelse(h1 < h2, paste(h1, h2, sep = " - "), paste(h2, h1, sep = " - "))) %>%
+  group_by(pair) %>%
+  summarise(n_edges = n() / 20, mean_abs = mean(abs_delta), .groups = "drop") %>%
+  arrange(desc(mean_abs))
+print(as.data.frame(grp), row.names = FALSE, digits = 3)
+
+cat("\n-- Pairwise correlations between the countries' edge-change vectors --\n")
+wide <- ee %>% mutate(key = paste(node1, node2)) %>%
+  select(cntry, key, delta_R10_minus_R9) %>%
+  tidyr::pivot_wider(names_from = cntry, values_from = delta_R10_minus_R9)
+CM <- cor(as.matrix(wide[, -1])); ut <- upper.tri(CM)
+show("Median pairwise correlation", sprintf("%.3f", median(CM[ut])),
+     ", range ", sprintf("%.3f to %.3f", min(CM[ut]), max(CM[ut])),
+     ", over ", sum(ut), " pairs")
+hi <- which(CM == max(CM[ut]), arr.ind = TRUE)[1, ]
+lo <- which(CM == min(CM[ut]), arr.ind = TRUE)[1, ]
+show("Most similar pair", paste(colnames(CM)[hi], collapse = " / "), sprintf(" (%.3f)", max(CM[ut])))
+show("Least similar pair", paste(colnames(CM)[lo], collapse = " / "), sprintf(" (%.3f)", min(CM[ut])))
+
+cat("\n-- The three edges with the largest mean absolute change, direction by country --\n")
+top3 <- csedge %>% arrange(desc(mean_abs_delta)) %>% slice(1:3)
+for (k in seq_len(nrow(top3))) {
+  sub <- ee %>%
+    filter((item1 == top3$item1[k] & item2 == top3$item2[k]) |
+           (item1 == top3$item2[k] & item2 == top3$item1[k])) %>%
+    arrange(delta_R10_minus_R9)
+  cat(sprintf("%s - %s | up in %d countries, down in %d, unchanged in %d\n",
+              top3$item1[k], top3$item2[k],
+              sum(sub$delta_R10_minus_R9 > 0), sum(sub$delta_R10_minus_R9 < 0),
+              sum(sub$delta_R10_minus_R9 == 0)))
+  cat("   Largest decreases: ", paste(sprintf("%s %.3f", head(sub$cntry, 3),
+                                     head(sub$delta_R10_minus_R9, 3)), collapse = ", "), "\n")
+  cat("   Largest increases: ", paste(sprintf("%s %.3f", rev(tail(sub$cntry, 3)),
+                                     rev(tail(sub$delta_R10_minus_R9, 3))), collapse = ", "), "\n")
+}
+
+cat("\n-- Magnitude of change and the balance of positive and negative edges, by country --\n")
+print(as.data.frame(cp %>%
+  select(cntry, mean_abs_edge_change, n_positive_change, n_negative_change,
+         n_no_change, distance_to_median_pattern) %>%
+  arrange(desc(mean_abs_edge_change))), row.names = FALSE, digits = 3)
+```
+
+```{r g3-comembership}
+## ---- Objective 3, supplementary: how the items cluster ------------------------------------------------
+co <- st %>% filter(!is.na(empirical_community)) %>%
+  select(cntry, wave, item, empirical_community)
+nets <- unique(paste(co$cntry, co$wave)); its <- sort(unique(co$item))
+P <- matrix(0, length(its), length(its), dimnames = list(its, its)); NN <- P
+for (nn in nets) {
+  pp <- strsplit(nn, " ")[[1]]
+  v <- co %>% filter(cntry == pp[1], wave == pp[2])
+  vv <- setNames(v$empirical_community, v$item); ii <- names(vv)
+  for (a in ii) for (b in ii) { NN[a, b] <- NN[a, b] + 1
+                                if (vv[a] == vv[b]) P[a, b] <- P[a, b] + 1 }
+}
+RR <- P / NN; ut <- upper.tri(RR)
+ho <- setNames(ITEM_MAP$higher_order, ITEM_MAP$item)
+vt <- setNames(ITEM_MAP$value_type,  ITEM_MAP$item)
+show("Item pairs from the same basic value, mean co-membership rate",
+     sprintf("%.3f", mean(RR[ut & outer(vt[its], vt[its], "==")])))
+show("Item pairs from the same higher-order value, mean co-membership rate",
+     sprintf("%.3f", mean(RR[ut & outer(ho[its], ho[its], "==")])))
+show("Item pairs from different higher-order values, mean co-membership rate",
+     sprintf("%.3f", mean(RR[ut & !outer(ho[its], ho[its], "==")])))
+dd <- data.frame(a = its[row(RR)[ut]], b = its[col(RR)[ut]], r = RR[ut])
+cat("\n-- Item pairs that share a community in all 40 networks --\n"); print(dd %>% filter(r == 1), row.names = FALSE)
+show("Item pairs that never share a community", sum(dd$r == 0), " / ", nrow(dd))
+
+cat("\n-- Distribution of community counts, and the higher-order composition of each solution --\n")
+kk <- co %>% group_by(cntry, wave) %>%
+  summarise(K = n_distinct(empirical_community), .groups = "drop")
+print(table(n_communities = kk$K))
+sig_of <- function(K) {
+  nets2 <- kk %>% filter(K == !!K); sig <- character(0)
+  for (i in seq_len(nrow(nets2))) {
+    v <- co %>% filter(cntry == nets2$cntry[i], wave == nets2$wave[i])
+    lab <- sapply(split(v$item, v$empirical_community),
+                  function(g) paste(sort(unique(ho[g])), collapse = "+"))
+    sig <- c(sig, paste(sort(lab), collapse = " || "))
+  }
+  sort(table(sig), decreasing = TRUE)
+}
+for (K in c(2, 4)) { cat("\nK =", K, "\n"); print(head(sig_of(K), 3)) }
+
+cat("\n-- Community composition by round for the four countries shown in Figure 6 --\n")
+for (cc2 in c("FI", "HU", "IT", "SI")) for (w in c("R9", "R10")) {
+  v <- co %>% filter(cntry == cc2, wave == w)
+  cat(cc2, w, ": ", paste(sapply(split(v$item, v$empirical_community),
+      function(g) paste(g, collapse = ",")), collapse = " | "), "\n", sep = "")
+}
+```
+
+```{r figures, fig.width=7, fig.height=6}
+## ---- Figure 4: standardised round differences in the 21 items ------------------------------------------
+## Blue marks items significant after Holm correction, grey those that are not. The pairing was checked for colour-vision deficiency (separation 17.0 under protan simulation).
+## The intervals are per-item 95% CIs with no simultaneous correction, so an interval can exclude zero while the item is not significant after correction. The caption says so as well.
+d_lvl <- read.csv(file.path(ROOT, "level_test_weighted.csv"), stringsAsFactors = FALSE) %>%
+  mutate(lab = paste0(unname(ITEM_EN[item]), "  (", item, ")"),
+         sig = ifelse(p_holm < .05, "Holm-adjusted p < .05", "Not significant")) %>%
+  arrange(d) %>%
+  mutate(lab = factor(lab, levels = lab))
+n_sig <- sum(d_lvl$p_holm < .05); n_up <- sum(d_lvl$p_holm < .05 & d_lvl$d > 0)
+
+p_lvl <- ggplot(d_lvl, aes(x = d, y = lab, colour = sig)) +
+  geom_vline(xintercept = 0, colour = "grey55", linewidth = 0.4) +
+  geom_errorbarh(aes(xmin = d_lo, xmax = d_hi), height = 0, linewidth = 0.7) +
+  geom_point(size = 2.4) +
+  scale_colour_manual(values = c("Holm-adjusted p < .05" = BLUE, "Not significant" = GREY)) +
+  scale_x_continuous(limits = c(-0.13, 0.22), breaks = seq(-0.10, 0.20, 0.05)) +
+  labs(title = "Figure 4. Standardised round differences in the 21 value items",
+       subtitle = "Survey-weighted regression with country fixed effects, R10 minus R9, with 95% confidence intervals",
+       x = "Standardised difference (R10 - R9)", y = NULL,
+       caption = paste0(
+         "Positive values mean higher endorsement in R10. ", n_sig,
+         " of the 21 items differ after Holm correction\nacross the 21 tests, ", n_up,
+         " of them upward. The intervals are the 95% CI for each item on its own and are not\n",
+         "adjusted for multiplicity, so an interval can exclude zero while the item is not significant after correction.")) +
+  theme_thesis +
+  theme(axis.text.y = element_text(colour = "#3d3c39"))
+save_fig(file.path(FIG, "fig_level_forest.png"), p_lvl, width = 9.2, height = 7)
+p_lvl
+
+## ---- Figure 5: overall structure test for the 20 countries -------------------------------------------
+d2 <- nct %>%
+  mutate(sig = ifelse(p_struct_holm < .05, "Holm-adjusted p < .05", "Not significant"),
+         lab = ifelse(p_struct_holm < .05,
+                      sprintf("%s  M = %.3f, p = %.3f", cntry, M, p_struct_holm), NA))
+p2 <- ggplot(d2, aes(x = M, y = reorder(cntry, M), colour = sig)) +
+  geom_segment(aes(x = 0, xend = M, yend = reorder(cntry, M)), linewidth = 0.5) +
+  geom_point(size = 2.4) +
+  geom_text(aes(label = lab), hjust = -0.06, size = 3, show.legend = FALSE, na.rm = TRUE) +
+  scale_colour_manual(values = c("Holm-adjusted p < .05" = BLUE, "Not significant" = GREY)) +
+  scale_x_continuous(expand = expansion(mult = c(0, 0.42))) +
+  labs(title = "Figure 5. Network structure invariance test (NCT), 20 countries",
+       subtitle = "M = maximum absolute edge-weight difference between R9 and R10; 1,000 permutations",
+       x = "M statistic", y = NULL,
+       caption = "Holm correction applied across the 20 countries. Only Hungary and Estonia reject structural equality.") +
+  theme_thesis
+save_fig(file.path(FIG, "fig_nct_structure.png"), p2)
+p2
+
+## ---- Appendix Figure D1: Euclidean distance from the median change pattern ------------------------------------
+## Country identity is already given by the y axis, so colour encodes only the three groups (closest, middle, furthest) rather than repeating the country codes
+d4 <- dsp %>%
+  mutate(grp = factor(case_group, levels = c("Closest 3", "Middle", "Farthest 3")))
+p4 <- ggplot(d4, aes(x = distance_to_median_pattern, y = reorder(cntry, -distance_rank),
+                     colour = grp)) +
+  geom_segment(aes(x = min(d4$distance_to_median_pattern) * 0.97,
+                   xend = distance_to_median_pattern,
+                   yend = reorder(cntry, -distance_rank)), linewidth = 0.5) +
+  geom_point(size = 2.4) +
+  scale_colour_manual(values = c("Closest 3" = BLUE, "Middle" = GREY, "Farthest 3" = RED)) +
+  scale_x_continuous(expand = expansion(mult = c(0, 0.04))) +
+  labs(title = "Appendix Figure D1. Distance from the 20-country median edge-change pattern",
+       subtitle = "Euclidean distance over the 210-dimensional signed edge-change vector, descriptive only",
+       x = "Euclidean distance to median change pattern", y = NULL,
+       caption = paste0("Distance ranks how far a country edge-change pattern lies from the ",
+                        "20-country median, not statistical significance.\nHungary and Estonia, the ",
+                        "only two countries with significant structural change, rank 17th and 6th.")) +
+  theme_thesis
+save_fig(file.path(FIG, "fig_distance_rank.png"), p4, width = 8.6, height = 6.4)
+p4
+
+## ---- Figure 6: community partitions in both rounds for four countries --------------------------------------------
+## The categorical palette (blue/orange/aqua/yellow) was checked for colour-vision deficiency; the worst adjacent pairing separates by 9.1 under protan simulation.
+## That is below a 3:1 contrast ratio, so each cell also carries its community number as redundant encoding.
+COMM_PAL <- c("Openness" = "#2a78d6", "Self-enhancement" = "#eb6834",
+              "Conservation" = "#1baf7a", "Self-transcendence" = "#eda100")
+HO_ORDER <- names(COMM_PAL)
+SEL_C <- c("FI", "HU", "IT", "SI")
+SEL_LAB <- c(FI = "Finland   ARI = 1.000", HU = "Hungary   ARI = 0.809",
+             IT = "Italy   ARI = 0.693",  SI = "Slovenia   ARI = 0.422")
+
+dc <- st %>% filter(cntry %in% SEL_C) %>%
+  left_join(ITEM_MAP %>% select(item, item_en, value_type, higher_order), by = "item") %>%
+  group_by(cntry, wave, empirical_community) %>%
+  mutate(comm_ho = names(sort(table(higher_order), decreasing = TRUE))[1]) %>%
+  ungroup() %>%
+  mutate(comm_ho = ifelse(is.na(empirical_community), NA_character_, comm_ho),
+         comm_ho = factor(comm_ho, levels = HO_ORDER),
+         wave    = factor(wave, levels = c("R9", "R10")),
+         cntry   = factor(cntry, levels = SEL_C, labels = SEL_LAB[SEL_C]),
+         lab_left = sprintf("%s  (%s)", item_en, item))
+
+ord_c <- ITEM_MAP %>%
+  mutate(ho = factor(higher_order, levels = HO_ORDER),
+         lab_left = sprintf("%s  (%s)", item_en, item)) %>%
+  arrange(desc(as.integer(ho)), value_type, item_en)
+dc$lab_left <- factor(dc$lab_left, levels = ord_c$lab_left)
+
+p_comm <- ggplot(dc, aes(x = wave, y = lab_left, fill = comm_ho)) +
+  geom_tile(colour = "#fcfcfb", linewidth = 1.6) +
+  geom_text(aes(label = ifelse(is.na(empirical_community), "-",
+                               as.character(empirical_community))),
+            size = 2.7, colour = "#0b0b0b") +
+  facet_wrap(~ cntry, nrow = 1) +
+  scale_fill_manual(values = COMM_PAL, na.value = "#d9d8d2",
+                    breaks = HO_ORDER, drop = FALSE,
+                    name = "Higher-order value dominating the community") +
+  scale_x_discrete(position = "top", expand = c(0, 0)) +
+  scale_y_discrete(expand = c(0, 0)) +
+  labs(x = NULL, y = NULL,
+       caption = paste("Cell numbers are community labels within one network only.",
+                       "Items are ordered by their theoretical higher-order value.")) +
+  theme_minimal(base_size = 9) +
+  theme(panel.grid = element_blank(), legend.position = "bottom",
+        legend.key.size = unit(9, "pt"),
+        strip.text = element_text(face = "bold", size = 9),
+        axis.text.x.top = element_text(size = 8.5),
+        axis.text.y = element_text(size = 7.6),
+        plot.caption = element_text(hjust = 0, colour = "#52514e", size = 7.2),
+        plot.margin = margin(6, 10, 6, 6))
+save_fig(file.path(FIG, "fig_community_examples.png"), p_comm, width = 10.2, height = 4.8)
+p_comm
+
+## ---- Appendix Figure D2: cross-round agreement of the community partitions, ranked by ARI ----------------------------
+d5 <- cm %>% mutate(lab = sprintf("%d -> %d", n_communities_R9, n_communities_R10))
+p5 <- ggplot(d5, aes(x = ari_R9_R10, y = reorder(cntry, ari_R9_R10))) +
+  geom_segment(aes(x = 0, xend = ari_R9_R10, yend = reorder(cntry, ari_R9_R10)),
+               colour = BLUE, linewidth = 0.5) +
+  geom_point(colour = BLUE, size = 2.4) +
+  geom_text(aes(label = lab), hjust = -0.35, size = 2.9, colour = "#52514e") +
+  scale_x_continuous(limits = c(0, 1.12), breaks = seq(0, 1, 0.25),
+                     expand = expansion(mult = c(0, 0))) +
+  labs(title = "Appendix Figure D2. Adjusted Rand Index between R9 and R10 community partitions",
+       subtitle = "EGA (glasso, walktrap), annotations give the number of communities, R9 -> R10",
+       x = "Adjusted Rand Index", y = NULL,
+       caption = paste("Exploratory supplement estimated on a different network path than the main MGM analysis.",
+                       "\nPortugal's ARI uses the 20 items assigned in both rounds (see Appendix C5).")) +
+  theme_thesis
+save_fig(file.path(FIG, "fig_ari_rank.png"), p5, width = 8.6, height = 6.4)
+p5
+
+cat("Figures written:\n"); print(list.files(FIG))
+```
+
+---
+
+## 6. Export manifest and session information
+
+```{r wrapup}
+cat("Files exported to", normalizePath(OUT, mustWork = FALSE), ":\n")
+print(list.files(OUT))
+sessionInfo()
+```
